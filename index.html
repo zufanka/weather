@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>rainfrog — multi-model weather</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0e141b;
+    --bg-panel: #131b24;
+    --bg-card: #161f29;
+    --grid-line: #223140;
+    --ink: #e9e4d6;
+    --ink-dim: #8fa0ab;
+    --ink-faint: #56656f;
+    --accent: #d7cdb0;
+    --c-icon: #d65d4a;
+    --c-ecmwf: #4f8fdb;
+    --c-gfs: #4fb37a;
+    --c-gem: #e0a13d;
+    --c-ukmo: #a884d6;
+    --c-meteofrance: #3fb6b0;
+    --risk-storm: #e35b5b;
+    --risk-rain: #4f8fdb;
+    --risk-snow: #7fd9e6;
+    --risk-wind: #b489dd;
+    --risk-none: #223140;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at top left, #16202b 0%, var(--bg) 55%);
+    color:var(--ink);
+    font-family:'IBM Plex Mono', monospace;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 16px 60px;}
+
+  /* header */
+  header{margin-bottom:22px;}
+  h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:clamp(26px,5vw,38px);
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+  }
+  h1 span{color:var(--c-ecmwf);}
+  .sub{color:var(--ink-dim);font-size:13px;margin-bottom:18px;}
+
+  /* search */
+  .search-box{position:relative;max-width:420px;}
+  .search-box input{
+    width:100%;
+    background:var(--bg-panel);
+    border:1px solid var(--grid-line);
+    color:var(--ink);
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    padding:11px 14px;
+    border-radius:3px;
+    outline:none;
+  }
+  .search-box input:focus{border-color:var(--c-ecmwf);}
+  .search-box input::placeholder{color:var(--ink-faint);}
+  .results{
+    position:absolute;top:calc(100% + 4px);left:0;right:0;
+    background:var(--bg-panel);
+    border:1px solid var(--grid-line);
+    border-radius:3px;
+    overflow:hidden;
+    z-index:20;
+    display:none;
+  }
+  .results.show{display:block;}
+  .result-item{
+    padding:10px 14px;
+    cursor:pointer;
+    font-size:13px;
+    border-bottom:1px solid var(--grid-line);
+    display:flex;justify-content:space-between;gap:10px;
+  }
+  .result-item:last-child{border-bottom:none;}
+  .result-item:hover{background:#1c2733;}
+  .result-item .rname{color:var(--ink);}
+  .result-item .rmeta{color:var(--ink-faint);font-size:11px;white-space:nowrap;}
+
+  .remember-toggle{
+    display:flex;align-items:center;gap:7px;
+    font-size:12px;color:var(--ink-dim);
+    margin-top:10px;cursor:pointer;user-select:none;
+  }
+  .remember-toggle input{accent-color:var(--c-ecmwf);width:14px;height:14px;cursor:pointer;}
+  .status{color:var(--ink-faint);font-size:12px;margin-top:10px;min-height:16px;}
+
+  /* hero spread */
+  .hero{
+    margin-top:26px;
+    background:var(--bg-panel);
+    border:1px solid var(--grid-line);
+    border-radius:4px;
+    padding:20px 22px 22px;
+  }
+  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+  .hero-label{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;
+    font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);
+  }
+  .hero-time{font-size:11px;color:var(--ink-faint);}
+  .hero-right{text-align:right;}
+  .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--ink);}
+  .hero-now-range{font-size:11px;color:var(--ink-faint);margin-top:2px;}
+  .hero-astro{font-size:11px;color:var(--ink-faint);margin-top:6px;white-space:nowrap;}
+  .chart-title{
+    font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-faint);margin:4px 0 8px;
+  }
+  .temp-chart-wrap{margin:0 0 20px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .temp-chart-wrap svg{min-width:640px;}
+  .chart-caption{font-size:10px;color:var(--ink-faint);margin-top:6px;}
+  .hero-note{font-size:13px;color:var(--ink-dim);margin-bottom:18px;line-height:1.5;}
+
+  .hazard-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+  .hazard-chip{
+    display:flex;align-items:center;gap:7px;
+    background:#1a232d;border:1px solid var(--grid-line);
+    border-radius:20px;padding:6px 12px 6px 10px;
+    font-size:12px;
+  }
+  .hazard-dot{width:8px;height:8px;border-radius:50%;flex:none;}
+  .hazard-high .hazard-dot{background:#e35d4f;box-shadow:0 0 6px #e35d4faa;}
+  .hazard-high{border-color:#5c2e2a;background:#291b1a;}
+  .hazard-high .hazard-label{color:#f0b3ab;}
+  .hazard-low .hazard-dot{background:#e0a13d;}
+  .hazard-low .hazard-label{color:#e8d2ab;}
+  .hazard-clear .hazard-dot{background:#4fb37a;}
+  .hazard-clear{background:#16211c;border-color:#294536;}
+  .hazard-clear .hazard-label{color:#a9d8bd;}
+  .hazard-count{color:var(--ink-faint);font-size:10px;}
+
+  .strip{position:relative;height:64px;margin:0 6px 6px;}
+  .strip-line{position:absolute;left:0;right:0;top:38px;height:1px;background:var(--grid-line);}
+  .strip-band{position:absolute;top:34px;height:9px;background:linear-gradient(90deg, rgba(215,205,176,.06), rgba(215,205,176,.16), rgba(215,205,176,.06));border-radius:5px;}
+  .strip-dot{position:absolute;top:31px;width:15px;height:15px;border-radius:50%;border:2px solid var(--bg-panel);transform:translateX(-50%);}
+  .strip-val{position:absolute;top:0;font-size:11px;font-weight:600;transform:translateX(-50%);white-space:nowrap;}
+  .strip-axis{position:absolute;top:48px;font-size:10px;color:var(--ink-faint);transform:translateX(-50%);}
+
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin:2px 0 22px;}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);}
+  .legend-dot{width:9px;height:9px;border-radius:50%;flex:none;}
+
+  /* grid section */
+  .section-label{
+    font-family:'Space Grotesk',sans-serif;font-weight:600;
+    font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);
+    margin:32px 0 14px;display:flex;align-items:center;gap:10px;
+  }
+  .section-label::after{content:'';flex:1;height:1px;background:var(--grid-line);}
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(min(360px, 100%),1fr));
+    gap:16px;
+  }
+  .card{
+    background:var(--bg-card);
+    border:1px solid var(--grid-line);
+    border-radius:4px;
+    padding:16px 16px 12px;
+    border-top:3px solid var(--card-color, var(--c-ecmwf));
+  }
+  .card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px;}
+  .card-name{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;}
+  .card-meta{font-size:11px;color:var(--ink-faint);text-align:right;line-height:1.4;}
+  .card-agency{font-size:12px;color:var(--ink-faint);margin-bottom:10px;}
+  .card-nowval{font-size:12px;color:var(--ink-dim);margin-top:8px;}
+  .card-nowval b{color:var(--ink);font-size:15px;}
+  .card-badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;}
+  .card-badge{
+    font-size:10px;letter-spacing:.03em;
+    background:#291b1a;border:1px solid #5c2e2a;color:#f0b3ab;
+    padding:3px 8px;border-radius:12px;
+  }
+  .no-data{font-size:11px;color:var(--ink-faint);padding:20px 0;text-align:center;}
+
+  footer{margin-top:36px;font-size:11px;color:var(--ink-faint);line-height:1.6;}
+  footer a{color:var(--ink-dim);}
+
+  @media (max-width:640px){
+    .wrap{padding:16px 12px 40px;}
+    .hero{padding:16px 14px 18px;}
+    .card{padding:14px 14px 10px;}
+    .hero-top{flex-direction:column;align-items:flex-start;gap:12px;}
+    .hero-right{text-align:left;width:100%;}
+    .hero-astro{white-space:normal;}
+    .section-label{margin:26px 0 12px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>rain<span>frog</span></h1>
+    <div class="sub">Six national weather models, compared for the next 24 hours.</div>
+    <div class="search-box">
+      <input id="searchInput" type="text" placeholder="Search a place… (e.g. Innsbruck)" autocomplete="off">
+      <div class="results" id="results"></div>
+    </div>
+    <label class="remember-toggle">
+      <input type="checkbox" id="rememberCheckbox">
+      Remember this location
+    </label>
+    <div class="status" id="status"></div>
+  </header>
+
+  <div id="app"></div>
+
+  <footer>
+    Data: <a href="https://open-meteo.com" target="_blank">Open-Meteo.com</a>, CC BY 4.0 — ICON (DWD, Germany) · IFS (ECMWF) · GFS (NOAA) · GEM (ECCC, Canada) · UKMO (UK Met Office) · ARPEGE/AROME (Météo-France). Model availability and resolution vary by region; not all six always cover every location.
+  </footer>
+</div>
+
+<script>
+const MODELS = [
+  { id:'icon_seamless',        name:'ICON',   agency:'DWD · Germany',        res:'~11 km · to 7d',  color:'var(--c-icon)' },
+  { id:'ecmwf_ifs025',         name:'IFS',    agency:'ECMWF · Europe',       res:'9–25 km · to 15d', color:'var(--c-ecmwf)' },
+  { id:'gfs_seamless',         name:'GFS',    agency:'NOAA · United States', res:'~11 km · to 16d', color:'var(--c-gfs)' },
+  { id:'gem_seamless',         name:'GEM',    agency:'ECCC · Canada',        res:'~15 km · to 10d', color:'var(--c-gem)' },
+  { id:'ukmo_seamless',        name:'UKMO',   agency:'Met Office · UK',      res:'~10 km · to 7d',  color:'var(--c-ukmo)' },
+  { id:'meteofrance_seamless', name:'ARPEGE', agency:'Météo-France',         res:'~25 km · to 4d',  color:'var(--c-meteofrance)' },
+];
+
+// Shared horizontal geometry so the hourly x-axis lines up exactly between
+// the temperature chart and the precipitation heatmap below it.
+const CHART_HOURS = 24;
+const CHART_PAD_L = 14;
+const CHART_PAD_R = 36;
+const chartXFor = (padL, plotW, n) => i => padL + (i + 0.5) * (plotW / n);
+
+const $ = sel => document.querySelector(sel);
+const searchInput = $('#searchInput');
+const resultsBox = $('#results');
+const statusBox = $('#status');
+const app = $('#app');
+const rememberCheckbox = $('#rememberCheckbox');
+
+let debounceTimer = null;
+let currentPlace = null;
+
+const REMEMBER_KEY = 'rainfrog.modelSpread.place';
+function saveRememberedPlace(place) {
+  try { localStorage.setItem(REMEMBER_KEY, JSON.stringify(place)); } catch (e) {}
+}
+function clearRememberedPlace() {
+  try { localStorage.removeItem(REMEMBER_KEY); } catch (e) {}
+}
+function loadRememberedPlace() {
+  try {
+    const raw = localStorage.getItem(REMEMBER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+rememberCheckbox.addEventListener('change', () => {
+  if (rememberCheckbox.checked) {
+    if (currentPlace) saveRememberedPlace(currentPlace);
+  } else {
+    clearRememberedPlace();
+  }
+});
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { resultsBox.classList.remove('show'); return; }
+  debounceTimer = setTimeout(() => runGeocode(q), 300);
+});
+
+document.addEventListener('click', (e) => {
+  if (!resultsBox.contains(e.target) && e.target !== searchInput) {
+    resultsBox.classList.remove('show');
+  }
+});
+
+async function runGeocode(q) {
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`;
+    const res = await fetch(url);
+    const data = await res.json();
+    renderResults(data.results || []);
+  } catch (e) {
+    resultsBox.innerHTML = '<div class="result-item"><span class="rname">Search failed — try again</span></div>';
+    resultsBox.classList.add('show');
+  }
+}
+
+function renderResults(list) {
+  if (!list.length) {
+    resultsBox.innerHTML = '<div class="result-item"><span class="rname">No places found</span></div>';
+    resultsBox.classList.add('show');
+    return;
+  }
+  resultsBox.innerHTML = list.map((r, i) => {
+    const region = [r.admin1, r.country].filter(Boolean).join(', ');
+    return `<div class="result-item" data-i="${i}">
+      <span class="rname">${escapeHtml(r.name)}</span>
+      <span class="rmeta">${escapeHtml(region)}</span>
+    </div>`;
+  }).join('');
+  resultsBox.classList.add('show');
+  resultsBox.querySelectorAll('.result-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const r = list[+el.dataset.i];
+      if (!r.latitude) return;
+      searchInput.value = `${r.name}, ${r.country || ''}`;
+      resultsBox.classList.remove('show');
+      loadPlace({ name: r.name, country: r.country, lat: r.latitude, lon: r.longitude });
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function fetchModel(place, model) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m&models=${model.id}&forecast_days=2&timezone=auto`;
+  const res = await fetch(url);
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body || body.error) {
+    const reason = (body && body.reason) ? body.reason : `HTTP ${res.status}`;
+    throw new Error(reason);
+  }
+  return body;
+}
+
+async function fetchAstro(place) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&daily=sunrise,sunset,moon_phase&forecast_days=1&timezone=auto`;
+  const res = await fetch(url);
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body || body.error || !body.daily) return null;
+  return body.daily;
+}
+
+async function loadPlace(place) {
+  currentPlace = place;
+  if (rememberCheckbox.checked) saveRememberedPlace(place);
+
+  statusBox.textContent = `Fetching model runs for ${place.name}…`;
+  app.innerHTML = '';
+
+  const [settled, astro] = await Promise.all([
+    Promise.allSettled(MODELS.map(m => fetchModel(place, m))),
+    fetchAstro(place).catch(() => null),
+  ]);
+
+  const ok = settled.filter(s => s.status === 'fulfilled');
+  if (!ok.length) {
+    const firstError = settled.find(s => s.status === 'rejected');
+    const reason = firstError ? firstError.reason.message : 'unknown error';
+    statusBox.innerHTML = `Could not reach Open-Meteo (${escapeHtml(reason)}). This can happen if your network blocks outside API calls. Try again, or try another place.`;
+    return;
+  }
+
+  render(place, MODELS.map((m, i) => ({
+    model: m,
+    result: settled[i].status === 'fulfilled' ? settled[i].value : null,
+    error: settled[i].status === 'rejected' ? settled[i].reason.message : null,
+  })), astro);
+
+  const failedCount = settled.length - ok.length;
+  statusBox.textContent = failedCount ? `${failedCount} of ${MODELS.length} models unavailable for this location.` : '';
+}
+
+function findNowIndex(times, utcOffsetSeconds) {
+  const nowLocal = new Date(Date.now() + utcOffsetSeconds * 1000);
+  const y = nowLocal.getUTCFullYear();
+  const mo = String(nowLocal.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(nowLocal.getUTCDate()).padStart(2, '0');
+  const h = String(nowLocal.getUTCHours()).padStart(2, '0');
+  const target = `${y}-${mo}-${d}T${h}:00`;
+  let idx = times.indexOf(target);
+  if (idx === -1) idx = times.findIndex(t => t >= target);
+  return idx === -1 ? 0 : idx;
+}
+
+function extractSeries(hourly, modelId, variable) {
+  // find the key that matches variable_modelId, tolerant of naming variations
+  const exact = `${variable}_${modelId}`;
+  if (hourly[exact]) return hourly[exact];
+  if (hourly[variable]) return hourly[variable]; // single-model response comes back unsuffixed
+  const fuzzy = Object.keys(hourly).find(k => k.startsWith(variable) && k.endsWith(modelId));
+  return fuzzy ? hourly[fuzzy] : null;
+}
+
+const THUNDER_CODES = [95, 96, 99];
+const HEAVY_SNOW_CODES = [75, 86];
+const HEAVY_RAIN_CODES = [65, 67, 82];
+const FREEZING_RAIN_CODES = [66, 67];
+const HEAVY_RAIN_MM_PER_HR = 4;
+const STRONG_GUST_KMH = 60;
+const SEVERE_GUST_KMH = 90;
+
+function classifyHour(code, precip, gust) {
+  return {
+    thunder: THUNDER_CODES.includes(code),
+    heavySnow: HEAVY_SNOW_CODES.includes(code),
+    heavyRain: HEAVY_RAIN_CODES.includes(code) || (precip || 0) >= HEAVY_RAIN_MM_PER_HR,
+    freezingRain: FREEZING_RAIN_CODES.includes(code),
+    strongWind: (gust || 0) >= STRONG_GUST_KMH,
+    severeWind: (gust || 0) >= SEVERE_GUST_KMH,
+  };
+}
+
+function moonPhaseInfo(fraction) {
+  if (fraction === null || fraction === undefined) return null;
+  const f = ((fraction % 1) + 1) % 1;
+  if (f < 0.03 || f >= 0.97) return { name: 'New Moon', emoji: '🌑' };
+  if (f < 0.22) return { name: 'Waxing Crescent', emoji: '🌒' };
+  if (f < 0.28) return { name: 'First Quarter', emoji: '🌓' };
+  if (f < 0.47) return { name: 'Waxing Gibbous', emoji: '🌔' };
+  if (f < 0.53) return { name: 'Full Moon', emoji: '🌕' };
+  if (f < 0.72) return { name: 'Waning Gibbous', emoji: '🌖' };
+  if (f < 0.78) return { name: 'Last Quarter', emoji: '🌗' };
+  return { name: 'Waning Crescent', emoji: '🌘' };
+}
+
+function buildAstroLine(astro) {
+  if (!astro || !astro.sunrise || !astro.sunrise[0]) return '';
+  const sunrise = astro.sunrise[0].split('T')[1];
+  const sunset = astro.sunset ? astro.sunset[0].split('T')[1] : null;
+  const moon = astro.moon_phase ? moonPhaseInfo(astro.moon_phase[0]) : null;
+  const parts = [`🌅 ${sunrise}`];
+  if (sunset) parts.push(`🌇 ${sunset}`);
+  if (moon) parts.push(`${moon.emoji} ${moon.name}`);
+  return `<div class="hero-astro">${parts.join(' · ')}</div>`;
+}
+
+function render(place, entries, astro) {
+  const span = 24;
+  let sharedTimeLabel = '';
+
+  const perModel = entries.map(({ model: m, result, error }) => {
+    if (!result) return { ...m, available: false, error };
+    const hourly = result.hourly;
+    const times = hourly.time;
+    const offset = result.utc_offset_seconds || 0;
+    const nowIdx = findNowIndex(times, offset);
+
+    const temps = extractSeries(hourly, m.id, 'temperature_2m');
+    const precs = extractSeries(hourly, m.id, 'precipitation');
+    const precipProbs = extractSeries(hourly, m.id, 'precipitation_probability');
+    const codes = extractSeries(hourly, m.id, 'weather_code');
+    const winds = extractSeries(hourly, m.id, 'wind_speed_10m');
+    const gusts = extractSeries(hourly, m.id, 'wind_gusts_10m');
+    if (!temps) return { ...m, available: false, error: 'no data returned' };
+
+    const t = temps.slice(nowIdx, nowIdx + span);
+    const p = (precs || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
+    const pp = (precipProbs || t.map(() => null)).slice(nowIdx, nowIdx + span);
+    const c = (codes || t.map(() => 0)).slice(nowIdx, nowIdx + span);
+    const w = (winds || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
+    const g = (gusts || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
+    const times24 = times.slice(nowIdx, nowIdx + span);
+    const validT = t.filter(v => v !== null && v !== undefined);
+    if (!sharedTimeLabel && times24[0]) sharedTimeLabel = formatHourLabel(times24[0]);
+
+    const hourFlags = p.map((v, i) => classifyHour(c[i], v, g[i]));
+    const flags = {
+      thunder: hourFlags.some(f => f.thunder),
+      heavySnow: hourFlags.some(f => f.heavySnow),
+      heavyRain: hourFlags.some(f => f.heavyRain),
+      freezingRain: hourFlags.some(f => f.freezingRain),
+      strongWind: hourFlags.some(f => f.strongWind),
+      severeWind: hourFlags.some(f => f.severeWind),
+    };
+
+    return {
+      ...m,
+      available: validT.length > 0,
+      temps: t, precs: p, precipProb: pp, codes: c, winds: w, gusts: g, times: times24, hourFlags,
+      nowVal: t[0],
+      totalPrecip: p.reduce((a, b) => a + b, 0),
+      avgWind: w.reduce((a, b) => a + b, 0) / w.length,
+      maxGust: Math.max(0, ...g),
+      flags,
+      anyExtreme: flags.thunder || flags.heavySnow || flags.heavyRain || flags.freezingRain || flags.severeWind,
+    };
+  });
+
+  const header = `<div class="hero"><div class="hero-top">
+      <div>
+        <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''} — next 24h outlook</div>
+        <div class="hero-time">from ${escapeHtml(sharedTimeLabel)} local</div>
+      </div>
+      <div class="hero-right">
+        <div class="hero-now" id="heroNow"></div>
+        ${buildAstroLine(astro)}
+      </div>
+    </div>
+    <div class="hero-note" id="heroNote"></div>
+    <div id="heroBody"></div>
+  </div>
+  <div class="section-label">Next 24 hours, by model</div>
+  <div class="grid" id="cardGrid"></div>`;
+
+  app.innerHTML = header;
+  renderHero(perModel);
+  renderCards(perModel);
+}
+
+function formatHourLabel(iso) {
+  if (!iso) return '';
+  const [datePart, timePart] = iso.split('T');
+  return `${datePart} ${timePart}`;
+}
+
+const HAZARDS = [
+  { key: 'thunder',      label: 'Thunderstorms',   flagKey: 'thunder' },
+  { key: 'severeWind',   label: 'Severe gusts (90+ km/h)', flagKey: 'severeWind' },
+  { key: 'heavyRain',    label: 'Heavy rain',       flagKey: 'heavyRain' },
+  { key: 'heavySnow',    label: 'Heavy snow',       flagKey: 'heavySnow' },
+  { key: 'freezingRain', label: 'Freezing rain',    flagKey: 'freezingRain' },
+  { key: 'strongWind',   label: 'Strong gusts (60+ km/h)', flagKey: 'strongWind' },
+];
+
+function renderHero(perModel) {
+  const box = $('#heroBody');
+  const noteBox = $('#heroNote');
+  const nowBox = $('#heroNow');
+  const avail = perModel.filter(m => m.available);
+  if (!avail.length) {
+    noteBox.textContent = '';
+    nowBox.innerHTML = '';
+    box.innerHTML = '<div class="no-data">No data available from any model for this location.</div>';
+    return;
+  }
+
+  const nowTemps = avail.map(m => m.nowVal).filter(v => v !== null && v !== undefined);
+  if (nowTemps.length) {
+    const nowAvg = nowTemps.reduce((a, b) => a + b, 0) / nowTemps.length;
+    const nowMin = Math.min(...nowTemps), nowMax = Math.max(...nowTemps);
+    const rangeLabel = nowMax - nowMin >= 1
+      ? `${Math.round(nowMin)}–${Math.round(nowMax)}° now, across models`
+      : `now, across models`;
+    nowBox.innerHTML = `<div class="hero-now-val">${Math.round(nowAvg)}°</div><div class="hero-now-range">${rangeLabel}</div>`;
+  } else {
+    nowBox.innerHTML = '';
+  }
+
+  const hazardRows = HAZARDS.map(h => {
+    const hits = avail.filter(m => m.flags[h.flagKey]);
+    return { ...h, count: hits.length, models: hits };
+  }).filter(h => h.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const chips = hazardRows.length
+    ? hazardRows.map(h => {
+        const level = h.count >= avail.length * 0.5 ? 'high' : 'low';
+        return `<div class="hazard-chip hazard-${level}">
+          <span class="hazard-dot"></span>
+          <span class="hazard-label">${escapeHtml(h.label)}</span>
+          <span class="hazard-count">${h.count}/${avail.length}</span>
+        </div>`;
+      }).join('')
+    : `<div class="hazard-chip hazard-clear"><span class="hazard-dot"></span><span class="hazard-label">No extreme signals — quiet 24h across all models</span></div>`;
+
+  const precipVals = avail.map(m => m.totalPrecip);
+  const pMin = Math.min(...precipVals), pMax = Math.max(...precipVals);
+  const pSpread = pMax - pMin;
+
+  let note;
+  if (hazardRows.some(h => h.count >= avail.length * 0.5)) {
+    note = 'Most models agree something notable is coming — worth planning around.';
+  } else if (hazardRows.length) {
+    note = 'Only a minority of models flag this — could go either way, keep an eye on updates.';
+  } else if (pSpread > 5) {
+    note = 'No one is flagging extreme conditions, but the rainfall totals still disagree a fair amount.';
+  } else {
+    note = 'Models are calm and in agreement — a low-drama 24 hours ahead.';
+  }
+
+  const lo = 0, hi = Math.max(1, Math.ceil(pMax + 1));
+  const range = hi - lo || 1;
+  const sorted = [...avail].sort((a, b) => a.totalPrecip - b.totalPrecip);
+  const bandLeft = ((pMin - lo) / range) * 100;
+  const bandWidth = ((pMax - pMin) / range) * 100;
+
+  const dots = sorted.map((m, i) => {
+    const pct = ((m.totalPrecip - lo) / range) * 100;
+    return `<div class="strip-dot" style="left:${pct}%; background:${m.color};" title="${m.name}: ${m.totalPrecip.toFixed(1)}mm"></div>
+      <div class="strip-val" style="left:${pct}%; top:${(i % 2) * 14}px; color:${m.color};">${m.totalPrecip.toFixed(1)}mm</div>`;
+  }).join('');
+
+  noteBox.textContent = note;
+
+  box.innerHTML = `
+    <div class="hazard-row">${chips}</div>
+    <div class="legend">
+      ${MODELS.map(m => `<div class="legend-item"><span class="legend-dot" style="background:${m.color};"></span>${m.name}</div>`).join('')}
+    </div>
+    <div class="chart-title">Temperature — next 24h, all models</div>
+    ${buildLineChart(avail, 'temps', { unit: '°' })}
+    <div class="chart-title">Precipitation probability — next 24h, all models</div>
+    ${buildProbHeatmap(avail)}
+    <div class="chart-title">Rainfall/snow spread — total over 24h, range ${pMin.toFixed(1)}–${pMax.toFixed(1)}mm</div>
+    <div class="strip">
+      <div class="strip-band" style="left:${bandLeft}%; width:${bandWidth}%;"></div>
+      <div class="strip-line"></div>
+      ${dots}
+      <div class="strip-axis" style="left:0%;">${lo}mm</div>
+      <div class="strip-axis" style="left:100%;">${hi}mm</div>
+    </div>
+  `;
+}
+
+function buildLineChart(avail, seriesKey, opts) {
+  const { unit = '', domainMin = null, domainMax = null, height = 220 } = opts || {};
+  const W = 1000, H = height, PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = 26;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  const allVals = [];
+  avail.forEach(m => m[seriesKey].forEach(v => { if (v !== null && v !== undefined) allVals.push(v); }));
+  if (!allVals.length) allVals.push(domainMin ?? 0, domainMax ?? (domainMin ?? 0) + 1);
+  const vMin = domainMin !== null ? domainMin : Math.floor(Math.min(...allVals) - 1);
+  const vMax = domainMax !== null ? domainMax : Math.ceil(Math.max(...allVals) + 1);
+  const vRange = (vMax - vMin) || 1;
+
+  const n = CHART_HOURS;
+  const xFor = chartXFor(PAD_L, plotW, n);
+  const yFor = v => PAD_T + plotH - ((v - vMin) / vRange) * plotH;
+
+  const steps = 4;
+  const gridLines = [];
+  for (let s = 0; s <= steps; s++) {
+    const val = vMin + (vRange * s / steps);
+    const y = yFor(val);
+    gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono">${Math.round(val)}${unit}</text>`);
+  }
+
+  const times = avail[0].times;
+  const xLabels = [];
+  for (let i = 0; i < n; i += 3) {
+    const t = times[i];
+    if (!t) continue;
+    const hourLabel = t.split('T')[1].slice(0, 5);
+    xLabels.push(`<text x="${xFor(i).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
+  }
+
+  const lines = avail.map(m => {
+    const series = m[seriesKey];
+    let path = '';
+    series.forEach((v, i) => {
+      if (v === null || v === undefined) return;
+      const x = xFor(i), y = yFor(v);
+      path += (path === '' ? `M${x.toFixed(1)},${y.toFixed(1)}` : ` L${x.toFixed(1)},${y.toFixed(1)}`);
+    });
+    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2" opacity="0.9"/>`;
+  }).join('');
+
+  return `<div class="temp-chart-wrap"><svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+    ${gridLines.join('')}
+    ${lines}
+    ${xLabels.join('')}
+  </svg></div>`;
+}
+
+function buildProbHeatmap(avail) {
+  const rowH = 22, rowGap = 6;
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 8, PAD_B = 22;
+  const W = 1000;
+  const plotW = W - PAD_L - PAD_R;
+  const n = CHART_HOURS;
+  const colW = plotW / n;
+  const rows = avail.length;
+  const rowsHeight = rows * rowH + Math.max(0, rows - 1) * rowGap;
+  const H = PAD_T + rowsHeight + PAD_B;
+  const times = avail[0].times;
+
+  const vDivs = [];
+  for (let i = 0; i <= n; i += 6) {
+    const x = PAD_L + i * colW;
+    vDivs.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + rowsHeight).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.6"/>`);
+  }
+
+  const hourLabels = [];
+  for (let i = 0; i < n; i += 3) {
+    const t = times[i];
+    if (!t) continue;
+    const hourLabel = t.split('T')[1].slice(0, 5);
+    const x = PAD_L + i * colW + colW / 2;
+    hourLabels.push(`<text x="${x.toFixed(1)}" y="${(PAD_T + rowsHeight + 15).toFixed(1)}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
+  }
+
+  const rowsSvg = avail.map((m, ri) => {
+    const y = PAD_T + ri * (rowH + rowGap);
+    const cells = m.precipProb.map((v, i) => {
+      const x = PAD_L + i * colW + 1;
+      const w = colW - 2;
+      const hourLabel = times[i] ? times[i].split('T')[1] : '';
+      if (v === null || v === undefined) {
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${rowH}" rx="2" fill="url(#noDataHatch)"><title>${m.name} ${hourLabel}: no data</title></rect>`;
+      }
+      const opacity = 0.12 + (Math.max(0, Math.min(100, v)) / 100) * 0.8;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${rowH}" rx="2" fill="${m.color}" opacity="${opacity.toFixed(2)}"><title>${m.name} ${hourLabel}: ${Math.round(v)}%</title></rect>`;
+    }).join('');
+    return cells;
+  }).join('');
+
+  return `<div class="temp-chart-wrap"><svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+    <defs>
+      <pattern id="noDataHatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <rect width="6" height="6" fill="var(--bg-card)"/>
+        <line x1="0" y1="0" x2="0" y2="6" stroke="var(--grid-line)" stroke-width="2"/>
+      </pattern>
+    </defs>
+    ${vDivs.join('')}
+    ${rowsSvg}
+    ${hourLabels.join('')}
+  </svg>
+  <div class="chart-caption">Shade = chance of precipitation that hour, darker is higher · hatched = not reported by that model</div>
+  </div>`;
+}
+
+function renderCards(perModel) {
+  const grid = $('#cardGrid');
+  grid.innerHTML = perModel.map(m => cardHtml(m)).join('');
+}
+
+function cardHtml(m) {
+  if (!m.available) {
+    return `<div class="card" style="--card-color:${m.color}">
+      <div class="card-head"><div class="card-name">${m.name}</div><div class="card-meta">${m.res}</div></div>
+      <div class="card-agency">${m.agency}</div>
+      <div class="no-data">${m.error ? escapeHtml(m.error) : 'No forecast for this location'}</div>
+    </div>`;
+  }
+  const svg = buildChart(m);
+  const badges = HAZARDS.filter(h => m.flags[h.flagKey])
+    .map(h => `<span class="card-badge">${escapeHtml(h.label)}</span>`).join('');
+  return `<div class="card" style="--card-color:${m.color}">
+    <div class="card-head">
+      <div class="card-name">${m.name}</div>
+      <div class="card-meta">${m.agency}<br>${m.res}</div>
+    </div>
+    ${badges ? `<div class="card-badges">${badges}</div>` : ''}
+    ${svg}
+    <div class="card-nowval">now: <b>${m.nowVal !== null && m.nowVal !== undefined ? Math.round(m.nowVal) + '°' : '—'}</b> · rain/snow: <b>${m.totalPrecip.toFixed(1)}mm</b> · avg wind: <b>${m.avgWind.toFixed(0)} km/h</b></div>
+  </div>`;
+}
+
+function buildChart(m) {
+  const W = 340, H = 130, PAD_L = 34, PAD_R = 8, PAD_T = 14, PAD_B = 26;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH_prec = H - PAD_T - PAD_B - 12;
+  const precTop = PAD_T;
+  const windRow = precTop + plotH_prec + 8;
+
+  const precs = m.precs.map(v => v || 0);
+  const pMax = Math.max(1, ...precs);
+
+  const n = precs.length;
+  const xFor = i => PAD_L + (i / (n - 1)) * plotW;
+  const yForPrec = v => precTop + plotH_prec - (v / pMax) * plotH_prec;
+
+  const bars = precs.map((v, i) => {
+    if (v <= 0) return '';
+    const isThunder = m.hourFlags[i] && m.hourFlags[i].thunder;
+    const isHeavy = m.hourFlags[i] && (m.hourFlags[i].heavyRain || m.hourFlags[i].heavySnow);
+    const x = xFor(i) - 5;
+    const y = yForPrec(v);
+    const h = precTop + plotH_prec - y;
+    const fill = isThunder ? '#e35d4f' : (isHeavy ? m.color : m.color);
+    const opacity = isThunder || isHeavy ? 0.75 : 0.4;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="10" height="${h.toFixed(1)}" rx="1.5" fill="${fill}" opacity="${opacity}"/>`;
+  }).join('');
+
+  const thunderMarks = precs.map((v, i) => {
+    if (!m.hourFlags[i] || !m.hourFlags[i].thunder) return '';
+    return `<text x="${xFor(i).toFixed(1)}" y="${precTop - 3}" font-size="11" fill="#e35d4f" text-anchor="middle">⚡</text>`;
+  }).join('');
+
+  const windTicks = m.gusts.map((v, i) => {
+    if (!m.hourFlags[i] || !m.hourFlags[i].strongWind) return '';
+    const severe = m.hourFlags[i].severeWind;
+    return `<line x1="${xFor(i).toFixed(1)}" y1="${windRow}" x2="${xFor(i).toFixed(1)}" y2="${windRow + 5}" stroke="${severe ? '#e35d4f' : '#e0a13d'}" stroke-width="2.4"/>`;
+  }).join('');
+
+  // hour axis labels every 6 hours
+  const labels = [];
+  for (let i = 0; i < n; i += 6) {
+    const t = m.times[i];
+    if (!t) continue;
+    const hourLabel = t.split('T')[1].slice(0,5);
+    labels.push(`<text x="${xFor(i).toFixed(1)}" y="${H-6}" font-size="11" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
+  }
+
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+    <text x="${PAD_L-6}" y="${precTop+9}" font-size="10" fill="var(--ink-faint)" text-anchor="end" font-family="IBM Plex Mono">${pMax.toFixed(0)}mm</text>
+    <text x="${PAD_L-6}" y="${precTop+plotH_prec}" font-size="10" fill="var(--ink-faint)" text-anchor="end" font-family="IBM Plex Mono">0</text>
+    <line x1="${PAD_L}" y1="${precTop+plotH_prec}" x2="${W-PAD_R}" y2="${precTop+plotH_prec}" stroke="var(--grid-line)" stroke-width="1"/>
+    ${bars}
+    ${thunderMarks}
+    ${windTicks}
+    ${labels.join('')}
+  </svg>`;
+}
+
+// load a remembered place if one was saved, otherwise default to Vienna, Austria
+const remembered = loadRememberedPlace();
+if (remembered) {
+  rememberCheckbox.checked = true;
+  loadPlace(remembered);
+  searchInput.value = `${remembered.name}${remembered.country ? ', ' + remembered.country : ''}`;
+} else {
+  loadPlace({ name: 'Vienna', country: 'Austria', lat: 48.2082, lon: 16.3738 });
+  searchInput.value = 'Vienna, Austria';
+}
+</script>
+</body>
+</html>
