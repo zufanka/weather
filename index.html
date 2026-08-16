@@ -109,7 +109,6 @@
     font-family:'Space Grotesk',sans-serif;font-weight:600;
     font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);
   }
-  .hero-time{font-size:11px;color:var(--ink-faint);}
   .hero-right{text-align:right;}
   .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--ink);}
   .hero-now-range{font-size:11px;color:var(--ink-faint);margin-top:2px;}
@@ -118,10 +117,8 @@
     font-size:11px;letter-spacing:.06em;text-transform:uppercase;
     color:var(--ink-faint);margin:4px 0 8px;
   }
-  .temp-chart-wrap{margin:0 0 20px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
-  .temp-chart-wrap svg{min-width:640px;}
+  .temp-chart-wrap{margin:0 0 20px;}
   .chart-caption{font-size:10px;color:var(--ink-faint);margin-top:6px;}
-  .hero-note{font-size:13px;color:var(--ink-dim);margin-bottom:18px;line-height:1.5;}
 
   .hazard-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
   .hazard-chip{
@@ -249,6 +246,17 @@ const rememberCheckbox = $('#rememberCheckbox');
 
 let debounceTimer = null;
 let currentPlace = null;
+let lastAvailModels = null;
+
+// Charts are drawn at the exact measured pixel width of their container
+// (see renderResponsiveCharts), so 1 SVG unit = 1 CSS pixel and text is
+// always true-size — never shrunk to illegibility, never needs to scroll.
+// Redraw them on resize/orientation-change so they stay that way.
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderResponsiveCharts, 150);
+});
 
 const REMEMBER_KEY = 'rainfrog.modelSpread.place';
 function saveRememberedPlace(place) {
@@ -441,7 +449,6 @@ function buildAstroLine(astro) {
 
 function render(place, entries, astro) {
   const span = 24;
-  let sharedTimeLabel = '';
 
   const perModel = entries.map(({ model: m, result, error }) => {
     if (!result) return { ...m, available: false, error };
@@ -466,7 +473,6 @@ function render(place, entries, astro) {
     const g = (gusts || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
     const times24 = times.slice(nowIdx, nowIdx + span);
     const validT = t.filter(v => v !== null && v !== undefined);
-    if (!sharedTimeLabel && times24[0]) sharedTimeLabel = formatHourLabel(times24[0]);
 
     const hourFlags = p.map((v, i) => classifyHour(c[i], v, g[i]));
     const flags = {
@@ -493,15 +499,13 @@ function render(place, entries, astro) {
 
   const header = `<div class="hero"><div class="hero-top">
       <div>
-        <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''} — next 24h outlook</div>
-        <div class="hero-time">from ${escapeHtml(sharedTimeLabel)} local</div>
+        <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''}</div>
       </div>
       <div class="hero-right">
         <div class="hero-now" id="heroNow"></div>
         ${buildAstroLine(astro)}
       </div>
     </div>
-    <div class="hero-note" id="heroNote"></div>
     <div id="heroBody"></div>
   </div>
   <div class="section-label">Next 24 hours, by model</div>
@@ -510,12 +514,6 @@ function render(place, entries, astro) {
   app.innerHTML = header;
   renderHero(perModel);
   renderCards(perModel);
-}
-
-function formatHourLabel(iso) {
-  if (!iso) return '';
-  const [datePart, timePart] = iso.split('T');
-  return `${datePart} ${timePart}`;
 }
 
 const HAZARDS = [
@@ -529,13 +527,12 @@ const HAZARDS = [
 
 function renderHero(perModel) {
   const box = $('#heroBody');
-  const noteBox = $('#heroNote');
   const nowBox = $('#heroNow');
   const avail = perModel.filter(m => m.available);
   if (!avail.length) {
-    noteBox.textContent = '';
     nowBox.innerHTML = '';
     box.innerHTML = '<div class="no-data">No data available from any model for this location.</div>';
+    lastAvailModels = null;
     return;
   }
 
@@ -544,8 +541,8 @@ function renderHero(perModel) {
     const nowAvg = nowTemps.reduce((a, b) => a + b, 0) / nowTemps.length;
     const nowMin = Math.min(...nowTemps), nowMax = Math.max(...nowTemps);
     const rangeLabel = nowMax - nowMin >= 1
-      ? `${Math.round(nowMin)}–${Math.round(nowMax)}° now, across models`
-      : `now, across models`;
+      ? `${Math.round(nowMin)}–${Math.round(nowMax)}°`
+      : '';
     nowBox.innerHTML = `<div class="hero-now-val">${Math.round(nowAvg)}°</div><div class="hero-now-range">${rangeLabel}</div>`;
   } else {
     nowBox.innerHTML = '';
@@ -570,18 +567,6 @@ function renderHero(perModel) {
 
   const precipVals = avail.map(m => m.totalPrecip);
   const pMin = Math.min(...precipVals), pMax = Math.max(...precipVals);
-  const pSpread = pMax - pMin;
-
-  let note;
-  if (hazardRows.some(h => h.count >= avail.length * 0.5)) {
-    note = 'Most models agree something notable is coming — worth planning around.';
-  } else if (hazardRows.length) {
-    note = 'Only a minority of models flag this — could go either way, keep an eye on updates.';
-  } else if (pSpread > 5) {
-    note = 'No one is flagging extreme conditions, but the rainfall totals still disagree a fair amount.';
-  } else {
-    note = 'Models are calm and in agreement — a low-drama 24 hours ahead.';
-  }
 
   const lo = 0, hi = Math.max(1, Math.ceil(pMax + 1));
   const range = hi - lo || 1;
@@ -595,18 +580,16 @@ function renderHero(perModel) {
       <div class="strip-val" style="left:${pct}%; top:${(i % 2) * 14}px; color:${m.color};">${m.totalPrecip.toFixed(1)}mm</div>`;
   }).join('');
 
-  noteBox.textContent = note;
-
   box.innerHTML = `
     <div class="hazard-row">${chips}</div>
     <div class="legend">
       ${MODELS.map(m => `<div class="legend-item"><span class="legend-dot" style="background:${m.color};"></span>${m.name}</div>`).join('')}
     </div>
-    <div class="chart-title">Temperature — next 24h, all models</div>
-    ${buildLineChart(avail, 'temps', { unit: '°' })}
-    <div class="chart-title">Precipitation probability — next 24h, all models</div>
-    ${buildProbHeatmap(avail)}
-    <div class="chart-title">Rainfall/snow spread — total over 24h, range ${pMin.toFixed(1)}–${pMax.toFixed(1)}mm</div>
+    <div class="chart-title">Temperature</div>
+    <div class="temp-chart-wrap" id="tempChartHolder"></div>
+    <div class="chart-title">Precipitation probability</div>
+    <div class="temp-chart-wrap" id="probChartHolder"></div>
+    <div class="chart-title">Rainfall/snow spread</div>
     <div class="strip">
       <div class="strip-band" style="left:${bandLeft}%; width:${bandWidth}%;"></div>
       <div class="strip-line"></div>
@@ -615,11 +598,24 @@ function renderHero(perModel) {
       <div class="strip-axis" style="left:100%;">${hi}mm</div>
     </div>
   `;
+
+  lastAvailModels = avail;
+  renderResponsiveCharts();
+}
+
+function renderResponsiveCharts() {
+  const avail = lastAvailModels;
+  const tempHolder = $('#tempChartHolder');
+  const probHolder = $('#probChartHolder');
+  if (!avail || !tempHolder || !probHolder) return;
+  const width = Math.max(260, Math.round(tempHolder.getBoundingClientRect().width));
+  tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width });
+  probHolder.innerHTML = buildProbHeatmap(avail, width);
 }
 
 function buildLineChart(avail, seriesKey, opts) {
-  const { unit = '', domainMin = null, domainMax = null, height = 220 } = opts || {};
-  const W = 1000, H = height, PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = 26;
+  const { unit = '', domainMin = null, domainMax = null, height = 220, width = 1000 } = opts || {};
+  const W = width, H = height, PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = 26;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
 
@@ -663,17 +659,17 @@ function buildLineChart(avail, seriesKey, opts) {
     return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2" opacity="0.9"/>`;
   }).join('');
 
-  return `<div class="temp-chart-wrap"><svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
     ${gridLines.join('')}
     ${lines}
     ${xLabels.join('')}
-  </svg></div>`;
+  </svg>`;
 }
 
-function buildProbHeatmap(avail) {
+function buildProbHeatmap(avail, width) {
   const rowH = 22, rowGap = 6;
   const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 8, PAD_B = 22;
-  const W = 1000;
+  const W = width || 1000;
   const plotW = W - PAD_L - PAD_R;
   const n = CHART_HOURS;
   const colW = plotW / n;
@@ -712,7 +708,7 @@ function buildProbHeatmap(avail) {
     return cells;
   }).join('');
 
-  return `<div class="temp-chart-wrap"><svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
     <defs>
       <pattern id="noDataHatch" width="6" height="6" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
         <rect width="6" height="6" fill="var(--bg-card)"/>
@@ -723,8 +719,7 @@ function buildProbHeatmap(avail) {
     ${rowsSvg}
     ${hourLabels.join('')}
   </svg>
-  <div class="chart-caption">Shade = chance of precipitation that hour, darker is higher · hatched = not reported by that model</div>
-  </div>`;
+  <div class="chart-caption">Shade = chance of precipitation that hour, darker is higher · hatched = not reported by that model</div>`;
 }
 
 function renderCards(perModel) {
