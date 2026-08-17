@@ -2,7 +2,7 @@
 
 Compares six national weather models — ICON, IFS, GFS, GEM, UKMO, and ARPEGE — for one place over the next 24 hours, so you can see where forecasters agree and where they don't.
 
-Single static HTML file, no build step, no backend, no API keys.
+Single static HTML file, no build step, no backend, no API keys. `social-preview.png` is the Open Graph/Twitter card image (`social-preview.svg` is its source) — keep it next to `index.html` when deploying, since the page links to it with a relative path.
 
 ## Features
 
