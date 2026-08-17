@@ -128,6 +128,17 @@
     font-family:'Space Grotesk',sans-serif;font-weight:600;
     font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);
   }
+  .day-switch{
+    display:inline-flex;background:#1a232d;border:1px solid var(--grid-line);
+    border-radius:20px;padding:3px;gap:2px;margin-top:10px;
+  }
+  .day-switch-btn{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;
+    color:var(--ink-faint);background:transparent;border:none;
+    border-radius:16px;padding:6px 16px;cursor:pointer;
+  }
+  .day-switch-btn:hover:not(.active){color:var(--ink-dim);}
+  .day-switch-btn.active{background:var(--bg-card);color:var(--ink);}
   .hero-right{text-align:right;}
   .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--ink);}
   .hero-now-range{font-size:11px;color:var(--ink-faint);margin-top:2px;}
@@ -290,6 +301,13 @@ let debounceTimer = null;
 let currentPlace = null;
 let lastAvailModels = null;
 
+// 0 = the next 24h from now, 1 = tomorrow (the full calendar day). Re-render
+// on switch reuses the already-fetched 48h response — no re-fetch needed.
+let activeDayOffset = 0;
+let lastPlace = null;
+let lastEntries = null;
+let lastAstro = null;
+
 // Charts are drawn at the exact measured pixel width of their container
 // (see renderResponsiveCharts), so 1 SVG unit = 1 CSS pixel and text is
 // always true-size — never shrunk to illegibility, never needs to scroll.
@@ -320,6 +338,18 @@ rememberCheckbox.addEventListener('change', () => {
   } else {
     clearRememberedPlace();
   }
+});
+
+// Delegated on #app (not the buttons themselves) since render() rebuilds
+// the whole hero — including these buttons — on every place load and tab
+// switch alike.
+app.addEventListener('click', (e) => {
+  const btn = e.target.closest('.day-switch-btn');
+  if (!btn || !lastEntries) return;
+  const day = Number(btn.dataset.day);
+  if (day === activeDayOffset) return;
+  activeDayOffset = day;
+  render(lastPlace, lastEntries, lastAstro);
 });
 
 searchInput.addEventListener('input', () => {
@@ -388,7 +418,7 @@ async function fetchModel(place, model) {
 }
 
 async function fetchAstro(place) {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&daily=sunrise,sunset,moon_phase&forecast_days=1&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&daily=sunrise,sunset,moon_phase&forecast_days=2&timezone=auto`;
   const res = await fetch(url);
   const body = await res.json().catch(() => null);
   if (!res.ok || !body || body.error || !body.daily) return null;
@@ -425,15 +455,21 @@ async function loadPlace(place) {
   statusBox.textContent = failedCount ? `${failedCount} of ${MODELS.length} models unavailable for this location.` : '';
 }
 
-function findNowIndex(times, utcOffsetSeconds) {
+// dayOffset 0 = the next 24h starting right now; dayOffset 1 = the full
+// calendar day tomorrow (00:00–23:00 local). Date.UTC normalizes the
+// day-of-month overflow itself, so month/year boundaries roll over correctly.
+function findStartIndex(times, utcOffsetSeconds, dayOffset) {
   const nowLocal = new Date(Date.now() + utcOffsetSeconds * 1000);
-  const y = nowLocal.getUTCFullYear();
-  const mo = String(nowLocal.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(nowLocal.getUTCDate()).padStart(2, '0');
-  const h = String(nowLocal.getUTCHours()).padStart(2, '0');
-  const target = `${y}-${mo}-${d}T${h}:00`;
-  let idx = times.indexOf(target);
-  if (idx === -1) idx = times.findIndex(t => t >= target);
+  const target = dayOffset
+    ? new Date(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate() + dayOffset))
+    : nowLocal;
+  const y = target.getUTCFullYear();
+  const mo = String(target.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(target.getUTCDate()).padStart(2, '0');
+  const h = String(dayOffset ? 0 : target.getUTCHours()).padStart(2, '0');
+  const targetStr = `${y}-${mo}-${d}T${h}:00`;
+  let idx = times.indexOf(targetStr);
+  if (idx === -1) idx = times.findIndex(t => t >= targetStr);
   return idx === -1 ? 0 : idx;
 }
 
@@ -478,11 +514,11 @@ function moonPhaseInfo(fraction) {
   return { name: 'Waning Crescent', emoji: '🌘' };
 }
 
-function buildAstroLine(astro) {
-  if (!astro || !astro.sunrise || !astro.sunrise[0]) return '';
-  const sunrise = astro.sunrise[0].split('T')[1];
-  const sunset = astro.sunset ? astro.sunset[0].split('T')[1] : null;
-  const moon = astro.moon_phase ? moonPhaseInfo(astro.moon_phase[0]) : null;
+function buildAstroLine(astro, dayOffset) {
+  if (!astro || !astro.sunrise || !astro.sunrise[dayOffset]) return '';
+  const sunrise = astro.sunrise[dayOffset].split('T')[1];
+  const sunset = astro.sunset ? astro.sunset[dayOffset].split('T')[1] : null;
+  const moon = astro.moon_phase ? moonPhaseInfo(astro.moon_phase[dayOffset]) : null;
   const parts = [`🌅 ${sunrise}`];
   if (sunset) parts.push(`🌇 ${sunset}`);
   if (moon) parts.push(`${moon.emoji} ${moon.name}`);
@@ -490,6 +526,10 @@ function buildAstroLine(astro) {
 }
 
 function render(place, entries, astro) {
+  lastPlace = place;
+  lastEntries = entries;
+  lastAstro = astro;
+
   const span = 24;
 
   const perModel = entries.map(({ model: m, result, error }) => {
@@ -497,7 +537,7 @@ function render(place, entries, astro) {
     const hourly = result.hourly;
     const times = hourly.time;
     const offset = result.utc_offset_seconds || 0;
-    const nowIdx = findNowIndex(times, offset);
+    const nowIdx = findStartIndex(times, offset, activeDayOffset);
 
     const temps = extractSeries(hourly, m.id, 'temperature_2m');
     const precs = extractSeries(hourly, m.id, 'precipitation');
@@ -542,15 +582,19 @@ function render(place, entries, astro) {
   const header = `<div class="hero"><div class="hero-top">
       <div>
         <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''}</div>
+        <div class="day-switch">
+          <button type="button" class="day-switch-btn${activeDayOffset === 0 ? ' active' : ''}" data-day="0">Today</button>
+          <button type="button" class="day-switch-btn${activeDayOffset === 1 ? ' active' : ''}" data-day="1">Tomorrow</button>
+        </div>
       </div>
       <div class="hero-right">
         <div class="hero-now" id="heroNow"></div>
-        ${buildAstroLine(astro)}
+        ${buildAstroLine(astro, activeDayOffset)}
       </div>
     </div>
     <div id="heroBody"></div>
   </div>
-  <div class="section-label">Next 24 hours, by model</div>
+  <div class="section-label">${activeDayOffset === 1 ? 'Tomorrow' : 'Today'}, by model</div>
   <div class="grid" id="cardGrid"></div>`;
 
   app.innerHTML = header;
