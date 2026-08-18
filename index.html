@@ -346,7 +346,7 @@ let debounceTimer = null;
 let currentPlace = null;
 let lastAvailModels = null;
 
-// Hours of forecast shown from right now: 24 = "Today", 72 = the rolling
+// Hours of forecast shown from right now: 24 = "24h", 72 = the rolling
 // 3-day overview. Re-render on switch reuses the already-fetched response —
 // no re-fetch needed.
 let activeRange = 24;
@@ -630,8 +630,8 @@ function render(place, entries, astro) {
       <div>
         <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''}</div>
         <div class="day-switch">
-          <button type="button" class="day-switch-btn${activeRange === 24 ? ' active' : ''}" data-hours="24">Today</button>
-          <button type="button" class="day-switch-btn${activeRange === 72 ? ' active' : ''}" data-hours="72">Next 72h</button>
+          <button type="button" class="day-switch-btn${activeRange === 24 ? ' active' : ''}" data-hours="24">24h</button>
+          <button type="button" class="day-switch-btn${activeRange === 72 ? ' active' : ''}" data-hours="72">72h</button>
         </div>
       </div>
       <div class="hero-right">
