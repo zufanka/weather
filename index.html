@@ -166,9 +166,6 @@
   .hazard-high .hazard-label{color:#f0b3ab;}
   .hazard-low .hazard-dot{background:#e0a13d;}
   .hazard-low .hazard-label{color:#e8d2ab;}
-  .hazard-clear .hazard-dot{background:#4fb37a;}
-  .hazard-clear{background:#16211c;border-color:#294536;}
-  .hazard-clear .hazard-label{color:#a9d8bd;}
   .hazard-count{color:var(--ink-faint);font-size:10px;}
 
   .strip{position:relative;height:64px;margin:0 6px 6px;}
@@ -182,43 +179,6 @@
   .legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);}
   .legend-dot{width:9px;height:9px;border-radius:50%;flex:none;}
 
-  /* grid section */
-  .section-label{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;
-    font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);
-    margin:32px 0 14px;display:flex;align-items:center;gap:10px;
-  }
-  .section-label::after{content:'';flex:1;height:1px;background:var(--grid-line);}
-
-  .grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(min(360px, 100%),1fr));
-    gap:16px;
-  }
-  .card{
-    background:var(--bg-card);
-    border:1px solid var(--grid-line);
-    border-radius:4px;
-    padding:16px 16px 12px;
-    border-top:3px solid var(--card-color, var(--c-ecmwf));
-  }
-  .card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px;}
-  .card-name{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;}
-  .card-meta{font-size:11px;color:var(--ink-faint);text-align:right;line-height:1.4;}
-  .card-agency{font-size:12px;color:var(--ink-faint);margin-bottom:10px;}
-  .card-stats{
-    display:grid;grid-template-columns:1fr 1fr;
-    gap:8px 16px;margin-top:10px;
-    padding-top:10px;border-top:1px solid var(--grid-line);
-  }
-  .card-stat{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:12px;color:var(--ink-dim);}
-  .card-stat-val{color:var(--ink);font-weight:600;font-size:13px;white-space:nowrap;}
-  .card-badges{display:flex;flex-wrap:wrap;align-content:flex-start;gap:5px;min-height:24px;margin-bottom:10px;}
-  .card-badge{
-    font-size:10px;letter-spacing:.03em;
-    background:#291b1a;border:1px solid #5c2e2a;color:#f0b3ab;
-    padding:3px 8px;border-radius:12px;
-  }
   .no-data{font-size:11px;color:var(--ink-faint);padding:20px 0;text-align:center;}
 
   footer{margin-top:36px;font-size:11px;color:var(--ink-faint);line-height:1.6;}
@@ -227,11 +187,9 @@
   @media (max-width:640px){
     .wrap{padding:16px 12px 40px;}
     .hero{padding:16px 14px 18px;}
-    .card{padding:14px 14px 10px;}
     .hero-top{flex-direction:column;align-items:flex-start;gap:12px;}
     .hero-right{text-align:left;width:100%;}
     .hero-astro{white-space:normal;}
-    .section-label{margin:26px 0 12px;}
   }
 </style>
 </head>
@@ -269,25 +227,48 @@ const MODELS = [
 ];
 
 // Shared horizontal geometry so the hourly x-axis lines up exactly between
-// the temperature chart and the precipitation heatmap below it.
-const CHART_HOURS = 24;
+// the temperature chart and the precipitation chart below it. Both charts
+// size themselves to however many hours the active view covers (24 or 72),
+// read straight off the data rather than a fixed constant.
 const CHART_PAD_L = 14;
 const CHART_PAD_R = 36;
 const chartXFor = (padL, plotW, n) => i => padL + (i + 0.5) * (plotW / n);
 
-// Pick the widest hour-label interval (from a set of clean divisors of 24)
-// that still keeps every label at least CHART_LABEL_MIN_SPACING px apart —
-// so labels never crowd together on narrow screens, and both charts use
-// the same interval so their gridlines/labels stay aligned.
+// Pick the widest hour-label interval (from a set of clean divisors) that
+// still keeps every label at least minSpacing px apart — so labels never
+// crowd together on narrow screens, and both charts use the same interval
+// so their gridlines/labels stay aligned. The 72h view asks for more space
+// per label since its labels are wider ("Wed 06h" vs "06:00").
 const CHART_LABEL_MIN_SPACING = 46;
-function pickHourStep(plotW, hours) {
-  const n = hours || CHART_HOURS;
-  const maxLabels = Math.max(2, Math.floor(plotW / CHART_LABEL_MIN_SPACING));
-  const candidates = [1, 2, 3, 4, 6, 8, 12, 24];
+function pickHourStep(plotW, hours, minSpacing) {
+  const maxLabels = Math.max(2, Math.floor(plotW / (minSpacing || CHART_LABEL_MIN_SPACING)));
+  const candidates = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72];
   for (const step of candidates) {
-    if (Math.ceil(n / step) <= maxLabels) return step;
+    if (Math.ceil(hours / step) <= maxLabels) return step;
   }
-  return n;
+  return hours;
+}
+
+const WEEKDAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// "06:00" within a single day's view; once the axis spans more than a day,
+// "Wed 06h" — otherwise a repeating 00:00 could be mistaken for the same
+// hour on a different day. Parsed as UTC-midnight-of-that-date so the
+// weekday can't drift with the browser's own timezone.
+function hourAxisLabel(t, spanHours) {
+  const [datePart, timePart] = t.split('T');
+  if (spanHours <= 24) return timePart.slice(0, 5);
+  const weekday = WEEKDAY_ABBR[new Date(datePart + 'T00:00:00Z').getUTCDay()];
+  return `${weekday} ${timePart.slice(0, 2)}h`;
+}
+
+// Same idea as hourAxisLabel but for tooltips, which have room for the full
+// "HH:MM" rather than the axis's truncated "06h".
+function hourTooltipLabel(t, spanHours) {
+  const [datePart, timePart] = t.split('T');
+  const hm = timePart.slice(0, 5);
+  if (spanHours <= 24) return hm;
+  const weekday = WEEKDAY_ABBR[new Date(datePart + 'T00:00:00Z').getUTCDay()];
+  return `${weekday} ${hm}`;
 }
 
 const $ = sel => document.querySelector(sel);
@@ -301,9 +282,10 @@ let debounceTimer = null;
 let currentPlace = null;
 let lastAvailModels = null;
 
-// 0 = the next 24h from now, 1 = tomorrow (the full calendar day). Re-render
-// on switch reuses the already-fetched 48h response — no re-fetch needed.
-let activeDayOffset = 0;
+// Hours of forecast shown from right now: 24 = "Today", 72 = the rolling
+// 3-day overview. Re-render on switch reuses the already-fetched response —
+// no re-fetch needed.
+let activeRange = 24;
 let lastPlace = null;
 let lastEntries = null;
 let lastAstro = null;
@@ -346,9 +328,9 @@ rememberCheckbox.addEventListener('change', () => {
 app.addEventListener('click', (e) => {
   const btn = e.target.closest('.day-switch-btn');
   if (!btn || !lastEntries) return;
-  const day = Number(btn.dataset.day);
-  if (day === activeDayOffset) return;
-  activeDayOffset = day;
+  const hours = Number(btn.dataset.hours);
+  if (hours === activeRange) return;
+  activeRange = hours;
   render(lastPlace, lastEntries, lastAstro);
 });
 
@@ -407,7 +389,9 @@ function escapeHtml(s) {
 }
 
 async function fetchModel(place, model) {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m&models=${model.id}&forecast_days=2&timezone=auto`;
+  // forecast_days=4 guarantees a full 72h window is available no matter what
+  // hour "now" falls on within day 0 (worst case: now = day 0, hour 23).
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m&models=${model.id}&forecast_days=4&timezone=auto`;
   const res = await fetch(url);
   const body = await res.json().catch(() => null);
   if (!res.ok || !body || body.error) {
@@ -455,18 +439,15 @@ async function loadPlace(place) {
   statusBox.textContent = failedCount ? `${failedCount} of ${MODELS.length} models unavailable for this location.` : '';
 }
 
-// dayOffset 0 = the next 24h starting right now; dayOffset 1 = the full
-// calendar day tomorrow (00:00–23:00 local). Date.UTC normalizes the
-// day-of-month overflow itself, so month/year boundaries roll over correctly.
-function findStartIndex(times, utcOffsetSeconds, dayOffset) {
+// Index of the current hour in the model's local time series — both the
+// 24h and 72h views start right now, they just cover different spans from
+// that point.
+function findStartIndex(times, utcOffsetSeconds) {
   const nowLocal = new Date(Date.now() + utcOffsetSeconds * 1000);
-  const target = dayOffset
-    ? new Date(Date.UTC(nowLocal.getUTCFullYear(), nowLocal.getUTCMonth(), nowLocal.getUTCDate() + dayOffset))
-    : nowLocal;
-  const y = target.getUTCFullYear();
-  const mo = String(target.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(target.getUTCDate()).padStart(2, '0');
-  const h = String(dayOffset ? 0 : target.getUTCHours()).padStart(2, '0');
+  const y = nowLocal.getUTCFullYear();
+  const mo = String(nowLocal.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(nowLocal.getUTCDate()).padStart(2, '0');
+  const h = String(nowLocal.getUTCHours()).padStart(2, '0');
   const targetStr = `${y}-${mo}-${d}T${h}:00`;
   let idx = times.indexOf(targetStr);
   if (idx === -1) idx = times.findIndex(t => t >= targetStr);
@@ -514,11 +495,13 @@ function moonPhaseInfo(fraction) {
   return { name: 'Waning Crescent', emoji: '🌘' };
 }
 
-function buildAstroLine(astro, dayOffset) {
-  if (!astro || !astro.sunrise || !astro.sunrise[dayOffset]) return '';
-  const sunrise = astro.sunrise[dayOffset].split('T')[1];
-  const sunset = astro.sunset ? astro.sunset[dayOffset].split('T')[1] : null;
-  const moon = astro.moon_phase ? moonPhaseInfo(astro.moon_phase[dayOffset]) : null;
+// Always today's sunrise/sunset/moon — it's context for "right now", not a
+// per-view forecast, so it doesn't change between the 24h and 72h views.
+function buildAstroLine(astro) {
+  if (!astro || !astro.sunrise || !astro.sunrise[0]) return '';
+  const sunrise = astro.sunrise[0].split('T')[1];
+  const sunset = astro.sunset ? astro.sunset[0].split('T')[1] : null;
+  const moon = astro.moon_phase ? moonPhaseInfo(astro.moon_phase[0]) : null;
   const parts = [`🌅 ${sunrise}`];
   if (sunset) parts.push(`🌇 ${sunset}`);
   if (moon) parts.push(`${moon.emoji} ${moon.name}`);
@@ -530,14 +513,14 @@ function render(place, entries, astro) {
   lastEntries = entries;
   lastAstro = astro;
 
-  const span = 24;
+  const span = activeRange;
 
   const perModel = entries.map(({ model: m, result, error }) => {
     if (!result) return { ...m, available: false, error };
     const hourly = result.hourly;
     const times = hourly.time;
     const offset = result.utc_offset_seconds || 0;
-    const nowIdx = findStartIndex(times, offset, activeDayOffset);
+    const nowIdx = findStartIndex(times, offset);
 
     const temps = extractSeries(hourly, m.id, 'temperature_2m');
     const precs = extractSeries(hourly, m.id, 'precipitation');
@@ -553,7 +536,7 @@ function render(place, entries, astro) {
     const c = (codes || t.map(() => 0)).slice(nowIdx, nowIdx + span);
     const w = (winds || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
     const g = (gusts || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
-    const times24 = times.slice(nowIdx, nowIdx + span);
+    const timesSpan = times.slice(nowIdx, nowIdx + span);
     const validT = t.filter(v => v !== null && v !== undefined);
 
     const hourFlags = p.map((v, i) => classifyHour(c[i], v, g[i]));
@@ -569,7 +552,7 @@ function render(place, entries, astro) {
     return {
       ...m,
       available: validT.length > 0,
-      temps: t, precs: p, precipProb: pp, codes: c, winds: w, gusts: g, times: times24, hourFlags,
+      temps: t, precs: p, precipProb: pp, codes: c, winds: w, gusts: g, times: timesSpan, hourFlags,
       nowVal: t[0],
       totalPrecip: p.reduce((a, b) => a + b, 0),
       avgWind: w.reduce((a, b) => a + b, 0) / w.length,
@@ -583,23 +566,20 @@ function render(place, entries, astro) {
       <div>
         <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''}</div>
         <div class="day-switch">
-          <button type="button" class="day-switch-btn${activeDayOffset === 0 ? ' active' : ''}" data-day="0">Today</button>
-          <button type="button" class="day-switch-btn${activeDayOffset === 1 ? ' active' : ''}" data-day="1">Tomorrow</button>
+          <button type="button" class="day-switch-btn${activeRange === 24 ? ' active' : ''}" data-hours="24">Today</button>
+          <button type="button" class="day-switch-btn${activeRange === 72 ? ' active' : ''}" data-hours="72">Next 72h</button>
         </div>
       </div>
       <div class="hero-right">
         <div class="hero-now" id="heroNow"></div>
-        ${buildAstroLine(astro, activeDayOffset)}
+        ${buildAstroLine(astro)}
       </div>
     </div>
     <div id="heroBody"></div>
-  </div>
-  <div class="section-label">${activeDayOffset === 1 ? 'Tomorrow' : 'Today'}, by model</div>
-  <div class="grid" id="cardGrid"></div>`;
+  </div>`;
 
   app.innerHTML = header;
   renderHero(perModel);
-  renderCards(perModel);
 }
 
 const HAZARDS = [
@@ -640,16 +620,14 @@ function renderHero(perModel) {
   }).filter(h => h.count > 0)
     .sort((a, b) => b.count - a.count);
 
-  const chips = hazardRows.length
-    ? hazardRows.map(h => {
-        const level = h.count >= avail.length * 0.5 ? 'high' : 'low';
-        return `<div class="hazard-chip hazard-${level}">
-          <span class="hazard-dot"></span>
-          <span class="hazard-label">${escapeHtml(h.label)}</span>
-          <span class="hazard-count">${h.count}/${avail.length}</span>
-        </div>`;
-      }).join('')
-    : `<div class="hazard-chip hazard-clear"><span class="hazard-dot"></span><span class="hazard-label">No extreme signals — quiet 24h across all models</span></div>`;
+  const chips = hazardRows.map(h => {
+    const level = h.count >= avail.length * 0.5 ? 'high' : 'low';
+    return `<div class="hazard-chip hazard-${level}">
+      <span class="hazard-dot"></span>
+      <span class="hazard-label">${escapeHtml(h.label)}</span>
+      <span class="hazard-count">${h.count}/${avail.length}</span>
+    </div>`;
+  }).join('');
 
   const precipVals = avail.map(m => m.totalPrecip);
   const pMin = Math.min(...precipVals), pMax = Math.max(...precipVals);
@@ -667,14 +645,14 @@ function renderHero(perModel) {
   }).join('');
 
   box.innerHTML = `
-    <div class="hazard-row">${chips}</div>
+    ${hazardRows.length ? `<div class="hazard-row">${chips}</div>` : ''}
     <div class="legend">
       ${MODELS.map(m => `<div class="legend-item"><span class="legend-dot" style="background:${m.color};"></span>${m.name}</div>`).join('')}
     </div>
     <div class="chart-title">Temperature</div>
     <div class="temp-chart-wrap" id="tempChartHolder"></div>
-    <div class="chart-title">Probability of rainfall</div>
-    <div class="temp-chart-wrap" id="probChartHolder"></div>
+    <div class="chart-title">Precipitation</div>
+    <div class="temp-chart-wrap" id="precipChartHolder"></div>
     <div class="chart-title">Rainfall/snow spread</div>
     <div class="strip">
       <div class="strip-band" style="left:${bandLeft}%; width:${bandWidth}%;"></div>
@@ -692,11 +670,11 @@ function renderHero(perModel) {
 function renderResponsiveCharts() {
   const avail = lastAvailModels;
   const tempHolder = $('#tempChartHolder');
-  const probHolder = $('#probChartHolder');
-  if (!avail || !tempHolder || !probHolder) return;
+  const precipHolder = $('#precipChartHolder');
+  if (!avail || !tempHolder || !precipHolder) return;
   const width = Math.max(260, Math.round(tempHolder.getBoundingClientRect().width));
   tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width });
-  probHolder.innerHTML = buildProbHeatmap(avail, width);
+  precipHolder.innerHTML = buildPrecipChart(avail, width);
 }
 
 function buildLineChart(avail, seriesKey, opts) {
@@ -712,7 +690,7 @@ function buildLineChart(avail, seriesKey, opts) {
   const vMax = domainMax !== null ? domainMax : Math.ceil(Math.max(...allVals) + 1);
   const vRange = (vMax - vMin) || 1;
 
-  const n = CHART_HOURS;
+  const n = avail[0][seriesKey].length;
   const xFor = chartXFor(PAD_L, plotW, n);
   const yFor = v => PAD_T + plotH - ((v - vMin) / vRange) * plotH;
 
@@ -726,7 +704,7 @@ function buildLineChart(avail, seriesKey, opts) {
   }
 
   const times = avail[0].times;
-  const hourStep = pickHourStep(plotW, n);
+  const hourStep = pickHourStep(plotW, n, n > 24 ? 64 : CHART_LABEL_MIN_SPACING);
   const xLabels = [];
   const vLines = [];
   for (let i = 0; i < n; i += hourStep) {
@@ -734,7 +712,7 @@ function buildLineChart(avail, seriesKey, opts) {
     if (!t) continue;
     const x = xFor(i);
     vLines.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.5"/>`);
-    const hourLabel = t.split('T')[1].slice(0, 5);
+    const hourLabel = hourAxisLabel(t, n);
     xLabels.push(`<text x="${x.toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
   }
 
@@ -757,152 +735,75 @@ function buildLineChart(avail, seriesKey, opts) {
   </svg>`;
 }
 
-function buildProbHeatmap(avail, width) {
-  // Only give a row to models that actually report this — no hatched
-  // "not reported" placeholders, we just don't show what isn't there.
-  const reporting = avail.filter(m => m.precipProb.some(v => v !== null && v !== undefined));
-
-  const rowH = 22, rowGap = 6;
-  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 8, PAD_B = 22;
-  const W = width || 1000;
+// One combined chart: for each hour, every model's precipitation bar is drawn
+// on the same baseline, overlapping. Bar height = precipitation amount (mm,
+// shared scale across models); bar opacity = that model's chance of rain that
+// hour. Within an hour, bars are drawn tallest-first so each model's own peak
+// stays visible above the ones layered on top of it.
+function buildPrecipChart(avail, width) {
+  const W = width || 1000, H = 220, PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = 26;
   const plotW = W - PAD_L - PAD_R;
-  const n = CHART_HOURS;
+  const plotH = H - PAD_T - PAD_B;
+  const n = avail[0].times.length;
   const colW = plotW / n;
-  const rows = reporting.length;
-  const rowsHeight = rows * rowH + Math.max(0, rows - 1) * rowGap;
-  const H = PAD_T + rowsHeight + PAD_B;
-  const times = avail[0].times;
+  const barW = Math.max(4, colW - 6);
 
-  const hourStep = pickHourStep(plotW, n);
+  const allPrecip = [];
+  avail.forEach(m => m.precs.forEach(v => allPrecip.push(v || 0)));
+  const vMax = Math.max(1, Math.ceil(Math.max(0, ...allPrecip)));
 
-  const vDivs = [];
-  for (let i = 0; i <= n; i += hourStep) {
-    const x = PAD_L + i * colW;
-    vDivs.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + rowsHeight).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.6"/>`);
+  const xFor = chartXFor(PAD_L, plotW, n);
+  const yFor = v => PAD_T + plotH - (Math.max(0, v) / vMax) * plotH;
+
+  const steps = 4;
+  const gridLines = [];
+  for (let s = 0; s <= steps; s++) {
+    const val = vMax * s / steps;
+    const y = yFor(val);
+    gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono">${val.toFixed(val < 2 ? 1 : 0)}mm</text>`);
   }
 
-  const hourLabels = [];
+  const times = avail[0].times;
+  const hourStep = pickHourStep(plotW, n, n > 24 ? 64 : CHART_LABEL_MIN_SPACING);
+  const xLabels = [];
+  const vLines = [];
   for (let i = 0; i < n; i += hourStep) {
     const t = times[i];
     if (!t) continue;
-    const hourLabel = t.split('T')[1].slice(0, 5);
-    const x = PAD_L + i * colW + colW / 2;
-    hourLabels.push(`<text x="${x.toFixed(1)}" y="${(PAD_T + rowsHeight + 15).toFixed(1)}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
+    const x = xFor(i);
+    vLines.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.5"/>`);
+    const hourLabel = hourAxisLabel(t, n);
+    xLabels.push(`<text x="${x.toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
   }
 
-  const rowsSvg = reporting.map((m, ri) => {
-    const y = PAD_T + ri * (rowH + rowGap);
-    const cells = m.precipProb.map((v, i) => {
-      if (v === null || v === undefined) return '';
-      const x = PAD_L + i * colW + 1;
-      const w = colW - 2;
-      const hourLabel = times[i] ? times[i].split('T')[1] : '';
-      const opacity = 0.12 + (Math.max(0, Math.min(100, v)) / 100) * 0.8;
-      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${rowH}" rx="2" fill="${m.color}" opacity="${opacity.toFixed(2)}"><title>${m.name} ${hourLabel}: ${Math.round(v)}%</title></rect>`;
-    }).join('');
-    return cells;
-  }).join('');
+  const bars = [];
+  for (let i = 0; i < n; i++) {
+    const hourEntries = avail
+      .map(m => ({ m, v: m.precs[i] || 0, prob: m.precipProb[i] }))
+      .filter(e => e.v > 0)
+      .sort((a, b) => b.v - a.v); // tallest first, so it's drawn at the back
+    const x = xFor(i) - barW / 2;
+    hourEntries.forEach(({ m, v, prob }) => {
+      const y = yFor(v);
+      const h = (PAD_T + plotH) - y;
+      const opacity = (prob === null || prob === undefined)
+        ? 0.45
+        : 0.12 + (Math.max(0, Math.min(100, prob)) / 100) * 0.8;
+      const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
+      const probLabel = (prob === null || prob === undefined) ? 'no probability data' : `${Math.round(prob)}% chance`;
+      bars.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${m.color}" opacity="${opacity.toFixed(2)}"><title>${m.name} ${hourLabel}: ${v.toFixed(1)}mm, ${probLabel}</title></rect>`);
+    });
+  }
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
-    ${vDivs.join('')}
-    ${rowsSvg}
-    ${hourLabels.join('')}
+    ${vLines.join('')}
+    ${gridLines.join('')}
+    ${bars.join('')}
+    <line x1="${PAD_L}" y1="${(PAD_T + plotH).toFixed(1)}" x2="${W - PAD_R}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
+    ${xLabels.join('')}
   </svg>
-  <div class="chart-caption">Shade = chance of precipitation that hour, darker is higher</div>`;
-}
-
-function renderCards(perModel) {
-  const grid = $('#cardGrid');
-  const avail = perModel.filter(m => m.available);
-  const sharedPMax = Math.max(1, ...avail.map(m => Math.max(0, ...m.precs.map(v => v || 0))));
-  grid.innerHTML = perModel.map(m => cardHtml(m, sharedPMax)).join('');
-}
-
-function cardHtml(m, sharedPMax) {
-  if (!m.available) {
-    return `<div class="card" style="--card-color:${m.color}">
-      <div class="card-head"><div class="card-name">${m.name}</div><div class="card-meta">${m.res}</div></div>
-      <div class="card-agency">${m.agency}</div>
-      <div class="no-data">${m.error ? escapeHtml(m.error) : 'No forecast for this location'}</div>
-    </div>`;
-  }
-  const svg = buildChart(m, sharedPMax);
-  const badges = HAZARDS.filter(h => m.flags[h.flagKey])
-    .map(h => `<span class="card-badge">${escapeHtml(h.label)}</span>`).join('');
-  const stats = [
-    ['now', m.nowVal !== null && m.nowVal !== undefined ? Math.round(m.nowVal) + '°' : '—'],
-    ['rain/snow', `${m.totalPrecip.toFixed(1)}mm`],
-    ['avg wind', `${m.avgWind.toFixed(0)} km/h`],
-    ['peak gust', `${m.maxGust.toFixed(0)} km/h`],
-  ];
-  return `<div class="card" style="--card-color:${m.color}">
-    <div class="card-head">
-      <div class="card-name">${m.name}</div>
-      <div class="card-meta">${m.agency}<br>${m.res}</div>
-    </div>
-    <div class="card-badges">${badges}</div>
-    ${svg}
-    <div class="card-stats">
-      ${stats.map(([label, val]) => `<div class="card-stat"><span class="card-stat-label">${label}</span><span class="card-stat-val">${val}</span></div>`).join('')}
-    </div>
-  </div>`;
-}
-
-function buildChart(m, sharedPMax) {
-  const W = 340, H = 130, PAD_L = 34, PAD_R = 8, PAD_T = 14, PAD_B = 26;
-  const plotW = W - PAD_L - PAD_R;
-  const plotH_prec = H - PAD_T - PAD_B - 12;
-  const precTop = PAD_T;
-  const windRow = precTop + plotH_prec + 8;
-
-  const precs = m.precs.map(v => v || 0);
-  const pMax = sharedPMax || Math.max(1, ...precs);
-
-  const n = precs.length;
-  const xFor = i => PAD_L + (i / (n - 1)) * plotW;
-  const yForPrec = v => precTop + plotH_prec - (v / pMax) * plotH_prec;
-
-  const bars = precs.map((v, i) => {
-    if (v <= 0) return '';
-    const isThunder = m.hourFlags[i] && m.hourFlags[i].thunder;
-    const isHeavy = m.hourFlags[i] && (m.hourFlags[i].heavyRain || m.hourFlags[i].heavySnow);
-    const x = xFor(i) - 5;
-    const y = yForPrec(v);
-    const h = precTop + plotH_prec - y;
-    const fill = isThunder ? '#e35d4f' : (isHeavy ? m.color : m.color);
-    const opacity = isThunder || isHeavy ? 0.75 : 0.4;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="10" height="${h.toFixed(1)}" rx="1.5" fill="${fill}" opacity="${opacity}"/>`;
-  }).join('');
-
-  const thunderMarks = precs.map((v, i) => {
-    if (!m.hourFlags[i] || !m.hourFlags[i].thunder) return '';
-    return `<text x="${xFor(i).toFixed(1)}" y="${precTop - 3}" font-size="11" fill="#e35d4f" text-anchor="middle">⚡</text>`;
-  }).join('');
-
-  const windTicks = m.gusts.map((v, i) => {
-    if (!m.hourFlags[i] || !m.hourFlags[i].strongWind) return '';
-    const severe = m.hourFlags[i].severeWind;
-    return `<line x1="${xFor(i).toFixed(1)}" y1="${windRow}" x2="${xFor(i).toFixed(1)}" y2="${windRow + 5}" stroke="${severe ? '#e35d4f' : '#e0a13d'}" stroke-width="2.4"/>`;
-  }).join('');
-
-  // hour axis labels every 6 hours
-  const labels = [];
-  for (let i = 0; i < n; i += 6) {
-    const t = m.times[i];
-    if (!t) continue;
-    const hourLabel = t.split('T')[1].slice(0,5);
-    labels.push(`<text x="${xFor(i).toFixed(1)}" y="${H-6}" font-size="11" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
-  }
-
-  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
-    <text x="${PAD_L-6}" y="${precTop+9}" font-size="10" fill="var(--ink-faint)" text-anchor="end" font-family="IBM Plex Mono">${pMax.toFixed(0)}mm</text>
-    <text x="${PAD_L-6}" y="${precTop+plotH_prec}" font-size="10" fill="var(--ink-faint)" text-anchor="end" font-family="IBM Plex Mono">0</text>
-    <line x1="${PAD_L}" y1="${precTop+plotH_prec}" x2="${W-PAD_R}" y2="${precTop+plotH_prec}" stroke="var(--grid-line)" stroke-width="1"/>
-    ${bars}
-    ${thunderMarks}
-    ${windTicks}
-    ${labels.join('')}
-  </svg>`;
+  <div class="chart-caption">Bar height = precipitation amount, opacity = chance of rain that hour, darker is higher</div>`;
 }
 
 // load a remembered place if one was saved, otherwise default to Vienna, Austria
