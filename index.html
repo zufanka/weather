@@ -237,38 +237,102 @@ const chartXFor = (padL, plotW, n) => i => padL + (i + 0.5) * (plotW / n);
 // Pick the widest hour-label interval (from a set of clean divisors) that
 // still keeps every label at least minSpacing px apart — so labels never
 // crowd together on narrow screens, and both charts use the same interval
-// so their gridlines/labels stay aligned. The 72h view asks for more space
-// per label since its labels are wider ("Wed 06h" vs "06:00").
+// so their gridlines/labels stay aligned. `candidates` lets a multi-day
+// chart cap how coarse the step is allowed to get (see HOUR_TICK_CANDIDATES).
 const CHART_LABEL_MIN_SPACING = 46;
-function pickHourStep(plotW, hours, minSpacing) {
+function pickHourStep(plotW, hours, minSpacing, candidates) {
   const maxLabels = Math.max(2, Math.floor(plotW / (minSpacing || CHART_LABEL_MIN_SPACING)));
-  const candidates = [1, 2, 3, 4, 6, 8, 12, 24, 48, 72];
-  for (const step of candidates) {
+  const list = candidates || [1, 2, 3, 4, 6, 8, 12, 24, 48, 72];
+  for (const step of list) {
     if (Math.ceil(hours / step) <= maxLabels) return step;
   }
-  return hours;
+  return list[list.length - 1];
 }
+
+// Divisors of 24 that top out at 8h — i.e. never fewer than 3 gridlines per
+// calendar day, however little width is available. Used only once the chart
+// spans more than a day, when a separate day axis (see buildXAxis) already
+// carries the date, so the hour ticks stay short ("06") and can afford to
+// sit close together on a phone screen.
+const HOUR_TICK_CANDIDATES = [1, 2, 3, 4, 6, 8];
+const DAY_AXIS_LABEL_SPACING = 24;
 
 const WEEKDAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-// "06:00" within a single day's view; once the axis spans more than a day,
-// "Wed 06h" — otherwise a repeating 00:00 could be mistaken for the same
-// hour on a different day. Parsed as UTC-midnight-of-that-date so the
-// weekday can't drift with the browser's own timezone.
+
 function hourAxisLabel(t, spanHours) {
-  const [datePart, timePart] = t.split('T');
-  if (spanHours <= 24) return timePart.slice(0, 5);
-  const weekday = WEEKDAY_ABBR[new Date(datePart + 'T00:00:00Z').getUTCDay()];
-  return `${weekday} ${timePart.slice(0, 2)}h`;
+  const timePart = t.split('T')[1];
+  return spanHours > 24 ? timePart.slice(0, 2) : timePart.slice(0, 5);
 }
 
-// Same idea as hourAxisLabel but for tooltips, which have room for the full
-// "HH:MM" rather than the axis's truncated "06h".
+// For tooltips, which have room for the full "HH:MM" rather than the axis's
+// truncated "06", plus the weekday since a repeating 00:00 across several
+// days would otherwise be ambiguous. Parsed as UTC-midnight-of-that-date so
+// the weekday can't drift with the browser's own timezone.
 function hourTooltipLabel(t, spanHours) {
   const [datePart, timePart] = t.split('T');
   const hm = timePart.slice(0, 5);
   if (spanHours <= 24) return hm;
   const weekday = WEEKDAY_ABBR[new Date(datePart + 'T00:00:00Z').getUTCDay()];
   return `${weekday} ${hm}`;
+}
+
+// The x-axis shared by the temperature and precipitation charts: hour
+// gridlines/labels, plus — once the view spans more than a day — a coarser
+// day axis underneath it (a stronger boundary line where the date rolls
+// over, and a weekday label centered under each day's segment), so days
+// don't have to be squeezed into the hour labels themselves.
+function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T) {
+  const xFor = chartXFor(PAD_L, plotW, n);
+  const isMultiDay = n > 24;
+  const hourStep = isMultiDay
+    ? pickHourStep(plotW, n, DAY_AXIS_LABEL_SPACING, HOUR_TICK_CANDIDATES)
+    : pickHourStep(plotW, n);
+
+  const vLines = [];
+  const hourLabels = [];
+  const hourLabelY = isMultiDay ? PAD_T + plotH + 14 : PAD_T + plotH + 20;
+  for (let i = 0; i < n; i += hourStep) {
+    const t = times[i];
+    if (!t) continue;
+    const x = xFor(i);
+    vLines.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.5"/>`);
+    hourLabels.push(`<text x="${x.toFixed(1)}" y="${hourLabelY.toFixed(1)}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourAxisLabel(t, n)}</text>`);
+  }
+
+  let dayLines = '', dayLabels = '';
+  if (isMultiDay) {
+    // Split the hours into per-calendar-day segments so each one gets its
+    // own boundary line and a label centered under its own span.
+    const segments = [];
+    let segStart = 0, segDate = times[0] ? times[0].split('T')[0] : null;
+    for (let i = 1; i < n; i++) {
+      if (!times[i]) continue;
+      const d = times[i].split('T')[0];
+      if (d !== segDate) {
+        segments.push({ start: segStart, end: i - 1, date: segDate });
+        segStart = i;
+        segDate = d;
+      }
+    }
+    segments.push({ start: segStart, end: n - 1, date: segDate });
+
+    const colW = plotW / n;
+    const dayLineParts = [];
+    const dayLabelParts = [];
+    segments.forEach((seg, si) => {
+      if (si > 0) {
+        const x = xFor(seg.start) - colW / 2; // sits between the two straddling hours
+        dayLineParts.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.9"/>`);
+      }
+      const x = xFor((seg.start + seg.end) / 2);
+      const label = si === 0 ? 'Today' : WEEKDAY_ABBR[new Date(seg.date + 'T00:00:00Z').getUTCDay()];
+      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${(PAD_T + plotH + 30).toFixed(1)}" font-size="10" fill="var(--ink-faint)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
+    });
+    dayLines = dayLineParts.join('');
+    dayLabels = dayLabelParts.join('');
+  }
+
+  return { vLines: vLines.join(''), hourLabels: hourLabels.join(''), dayLines, dayLabels };
 }
 
 const $ = sel => document.querySelector(sel);
@@ -679,7 +743,12 @@ function renderResponsiveCharts() {
 
 function buildLineChart(avail, seriesKey, opts) {
   const { unit = '', domainMin = null, domainMax = null, height = 220, width = 1000 } = opts || {};
-  const W = width, H = height, PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = 26;
+  const n = avail[0][seriesKey].length;
+  const isMultiDay = n > 24;
+  // A multi-day chart gets a taller bottom band (day axis under the hour
+  // axis) — add that height back rather than shrinking the plot area.
+  const W = width, H = height + (isMultiDay ? 14 : 0);
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = isMultiDay ? 40 : 26;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
 
@@ -690,7 +759,6 @@ function buildLineChart(avail, seriesKey, opts) {
   const vMax = domainMax !== null ? domainMax : Math.ceil(Math.max(...allVals) + 1);
   const vRange = (vMax - vMin) || 1;
 
-  const n = avail[0][seriesKey].length;
   const xFor = chartXFor(PAD_L, plotW, n);
   const yFor = v => PAD_T + plotH - ((v - vMin) / vRange) * plotH;
 
@@ -704,17 +772,7 @@ function buildLineChart(avail, seriesKey, opts) {
   }
 
   const times = avail[0].times;
-  const hourStep = pickHourStep(plotW, n, n > 24 ? 64 : CHART_LABEL_MIN_SPACING);
-  const xLabels = [];
-  const vLines = [];
-  for (let i = 0; i < n; i += hourStep) {
-    const t = times[i];
-    if (!t) continue;
-    const x = xFor(i);
-    vLines.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.5"/>`);
-    const hourLabel = hourAxisLabel(t, n);
-    xLabels.push(`<text x="${x.toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
-  }
+  const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T);
 
   const lines = avail.map(m => {
     const series = m[seriesKey];
@@ -728,10 +786,12 @@ function buildLineChart(avail, seriesKey, opts) {
   }).join('');
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
-    ${vLines.join('')}
+    ${axis.vLines}
     ${gridLines.join('')}
     ${lines}
-    ${xLabels.join('')}
+    ${axis.dayLines}
+    ${axis.hourLabels}
+    ${axis.dayLabels}
   </svg>`;
 }
 
@@ -741,10 +801,12 @@ function buildLineChart(avail, seriesKey, opts) {
 // hour. Within an hour, bars are drawn tallest-first so each model's own peak
 // stays visible above the ones layered on top of it.
 function buildPrecipChart(avail, width) {
-  const W = width || 1000, H = 220, PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = 26;
+  const n = avail[0].times.length;
+  const isMultiDay = n > 24;
+  const W = width || 1000, H = 220 + (isMultiDay ? 14 : 0);
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = isMultiDay ? 40 : 26;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
-  const n = avail[0].times.length;
   const colW = plotW / n;
   const barW = Math.max(4, colW - 6);
 
@@ -765,17 +827,7 @@ function buildPrecipChart(avail, width) {
   }
 
   const times = avail[0].times;
-  const hourStep = pickHourStep(plotW, n, n > 24 ? 64 : CHART_LABEL_MIN_SPACING);
-  const xLabels = [];
-  const vLines = [];
-  for (let i = 0; i < n; i += hourStep) {
-    const t = times[i];
-    if (!t) continue;
-    const x = xFor(i);
-    vLines.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.5"/>`);
-    const hourLabel = hourAxisLabel(t, n);
-    xLabels.push(`<text x="${x.toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourLabel}</text>`);
-  }
+  const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T);
 
   const bars = [];
   for (let i = 0; i < n; i++) {
@@ -797,11 +849,13 @@ function buildPrecipChart(avail, width) {
   }
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
-    ${vLines.join('')}
+    ${axis.vLines}
     ${gridLines.join('')}
     ${bars.join('')}
     <line x1="${PAD_L}" y1="${(PAD_T + plotH).toFixed(1)}" x2="${W - PAD_R}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
-    ${xLabels.join('')}
+    ${axis.dayLines}
+    ${axis.hourLabels}
+    ${axis.dayLabels}
   </svg>
   <div class="chart-caption">Bar height = precipitation amount, opacity = chance of rain that hour, darker is higher</div>`;
 }
