@@ -35,6 +35,8 @@
     --ink-dim: #8fa0ab;
     --ink-faint: #56656f;
     --accent: #d7cdb0;
+    --c-precip: #6ea3d1;
+    --c-confidence: #d68fae;
     --c-icon: #d65d4a;
     --c-ecmwf: #4f8fdb;
     --c-gfs: #4fb37a;
@@ -280,17 +282,21 @@ function hourTooltipLabel(t, spanHours) {
 // gridlines/labels, plus — once the view spans more than a day — a coarser
 // day axis underneath it (a stronger boundary line where the date rolls
 // over, and a weekday label centered under each day's segment), so days
-// don't have to be squeezed into the hour labels themselves.
-function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T) {
+// don't have to be squeezed into the hour labels themselves. `topOffset`
+// pushes every label row down by that many px, for a chart that needs to
+// reserve a strip just below the plot for something else first (the
+// precipitation chart's confidence dots).
+function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, topOffset) {
   const xFor = chartXFor(PAD_L, plotW, n);
   const isMultiDay = n > 24;
   const hourStep = isMultiDay
     ? pickHourStep(plotW, n, DAY_AXIS_LABEL_SPACING, HOUR_TICK_CANDIDATES)
     : pickHourStep(plotW, n);
+  const off = topOffset || 0;
 
   const vLines = [];
   const hourLabels = [];
-  const hourLabelY = isMultiDay ? PAD_T + plotH + 14 : PAD_T + plotH + 20;
+  const hourLabelY = PAD_T + plotH + off + (isMultiDay ? 14 : 20);
   for (let i = 0; i < n; i += hourStep) {
     const t = times[i];
     if (!t) continue;
@@ -319,6 +325,7 @@ function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T) {
     const colW = plotW / n;
     const dayLineParts = [];
     const dayLabelParts = [];
+    const dayLabelY = PAD_T + plotH + off + 30;
     segments.forEach((seg, si) => {
       if (si > 0) {
         const x = xFor(seg.start) - colW / 2; // sits between the two straddling hours
@@ -326,7 +333,7 @@ function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T) {
       }
       const x = xFor((seg.start + seg.end) / 2);
       const label = si === 0 ? 'Today' : WEEKDAY_ABBR[new Date(seg.date + 'T00:00:00Z').getUTCDay()];
-      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${(PAD_T + plotH + 30).toFixed(1)}" font-size="10" fill="var(--ink-faint)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
+      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${dayLabelY.toFixed(1)}" font-size="10" fill="var(--ink-faint)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
     });
     dayLines = dayLineParts.join('');
     dayLabels = dayLabelParts.join('');
@@ -795,27 +802,43 @@ function buildLineChart(avail, seriesKey, opts) {
   </svg>`;
 }
 
-// One combined chart: for each hour, every model's precipitation bar is drawn
-// on the same baseline, overlapping. Bar height = precipitation amount (mm,
-// shared scale across models); bar opacity = that model's chance of rain that
-// hour. Within an hour, bars are drawn tallest-first so each model's own peak
-// stays visible above the ones layered on top of it.
+// One column per hour, but still every model's own bar — which model is
+// which still isn't the point, so all of them share one neutral color and a
+// low per-bar opacity, overlaid on the same baseline. Same-color transparent
+// layers compositing on top of each other is order-independent: the result
+// only depends on how many bars overlap at a given height, not which model
+// contributed them. So a column where models agree on the amount reads as a
+// short, solidly-saturated bar; a column where they're spread out fades from
+// solid (near the baseline, where most of them overlap) to faint (near the
+// top, where only the highest outlier reaches) — the fade *is* the spread.
+// A confidence dot beneath the axis carries the separate question of how
+// likely the models think rain is at all, on its own color.
+const BAR_LAYER_OPACITY = 0.32;
+const CONFIDENCE_DOT_ROW = 14; // px reserved between the plot and the hour-label row
 function buildPrecipChart(avail, width) {
   const n = avail[0].times.length;
   const isMultiDay = n > 24;
-  const W = width || 1000, H = 220 + (isMultiDay ? 14 : 0);
-  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = isMultiDay ? 40 : 26;
+  const dotOffset = CONFIDENCE_DOT_ROW;
+  const W = width || 1000, H = 220 + dotOffset + (isMultiDay ? 14 : 0);
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = (isMultiDay ? 40 : 26) + dotOffset;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
   const colW = plotW / n;
-  const barW = Math.max(4, colW - 6);
+  const barW = Math.max(6, colW - 4);
 
-  const allPrecip = [];
-  avail.forEach(m => m.precs.forEach(v => allPrecip.push(v || 0)));
-  const vMax = Math.max(1, Math.ceil(Math.max(0, ...allPrecip)));
+  const times = avail[0].times;
+  const hours = [];
+  for (let i = 0; i < n; i++) {
+    const amounts = avail.map(m => m.precs[i] || 0).filter(v => v > 0);
+    const probs = avail.map(m => m.precipProb[i]).filter(p => p !== null && p !== undefined);
+    const avgProb = probs.length ? probs.reduce((a, b) => a + b, 0) / probs.length : null;
+    hours.push({ amounts, avgProb, reporting: probs.length, total: avail.length });
+  }
 
+  const vMax = Math.max(1, Math.ceil(Math.max(0, ...hours.flatMap(h => h.amounts))));
   const xFor = chartXFor(PAD_L, plotW, n);
   const yFor = v => PAD_T + plotH - (Math.max(0, v) / vMax) * plotH;
+  const plotBottom = PAD_T + plotH;
 
   const steps = 4;
   const gridLines = [];
@@ -826,38 +849,46 @@ function buildPrecipChart(avail, width) {
       <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono">${val.toFixed(val < 2 ? 1 : 0)}mm</text>`);
   }
 
-  const times = avail[0].times;
-  const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T);
+  const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, dotOffset);
 
   const bars = [];
-  for (let i = 0; i < n; i++) {
-    const hourEntries = avail
-      .map(m => ({ m, v: m.precs[i] || 0, prob: m.precipProb[i] }))
-      .filter(e => e.v > 0)
-      .sort((a, b) => b.v - a.v); // tallest first, so it's drawn at the back
-    const x = xFor(i) - barW / 2;
-    hourEntries.forEach(({ m, v, prob }) => {
+  const dots = [];
+  hours.forEach((h, i) => {
+    const x = xFor(i);
+    const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
+
+    h.amounts.forEach(v => {
       const y = yFor(v);
-      const h = (PAD_T + plotH) - y;
-      const opacity = (prob === null || prob === undefined)
-        ? 0.45
-        : 0.12 + (Math.max(0, Math.min(100, prob)) / 100) * 0.8;
-      const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
-      const probLabel = (prob === null || prob === undefined) ? 'no probability data' : `${Math.round(prob)}% chance`;
-      bars.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${m.color}" opacity="${opacity.toFixed(2)}"><title>${m.name} ${hourLabel}: ${v.toFixed(1)}mm, ${probLabel}</title></rect>`);
+      const barH = plotBottom - y;
+      bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="var(--c-precip)" opacity="${BAR_LAYER_OPACITY}"/>`);
     });
-  }
+    if (h.amounts.length) {
+      const min = Math.min(...h.amounts), max = Math.max(...h.amounts);
+      const range = min === max ? `${min.toFixed(1)}mm` : `${min.toFixed(1)}–${max.toFixed(1)}mm`;
+      const title = `${hourLabel}: ${range} · ${h.amounts.length} of ${h.total} models predict rain`;
+      const hitY = yFor(max);
+      bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${hitY.toFixed(1)}" width="${barW.toFixed(1)}" height="${(plotBottom - hitY).toFixed(1)}" fill="transparent"><title>${title}</title></rect>`);
+    }
+
+    if (h.avgProb !== null) {
+      const opacity = 0.15 + (Math.max(0, Math.min(100, h.avgProb)) / 100) * 0.75;
+      const dotY = plotBottom + dotOffset / 2;
+      const title = `${hourLabel}: ${Math.round(h.avgProb)}% avg chance of rain (${h.reporting}/${h.total} models)`;
+      dots.push(`<circle cx="${x.toFixed(1)}" cy="${dotY.toFixed(1)}" r="3" fill="var(--c-confidence)" opacity="${opacity.toFixed(2)}"><title>${title}</title></circle>`);
+    }
+  });
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
     ${axis.vLines}
     ${gridLines.join('')}
     ${bars.join('')}
-    <line x1="${PAD_L}" y1="${(PAD_T + plotH).toFixed(1)}" x2="${W - PAD_R}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
+    <line x1="${PAD_L}" y1="${plotBottom.toFixed(1)}" x2="${W - PAD_R}" y2="${plotBottom.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
+    ${dots.join('')}
     ${axis.dayLines}
     ${axis.hourLabels}
     ${axis.dayLabels}
   </svg>
-  <div class="chart-caption">Bar height = precipitation amount, opacity = chance of rain that hour, darker is higher</div>`;
+  <div class="chart-caption">Bar shade = how many models agree on that amount, darker is more · dot = average chance of rain that hour, darker is higher</div>`;
 }
 
 // load a remembered place if one was saved, otherwise default to Vienna, Austria
