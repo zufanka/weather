@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>rainfrog — multi-model weather</title>
-<meta name="description" content="Six national weather models, compared for the next 24 hours.">
+<meta name="description" content="Six national weather models, compared side by side.">
 <meta name="theme-color" content="#0e141b">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B8%3C/text%3E%3C/svg%3E">
 <link rel="canonical" href="https://weather.homolova.sk/">
@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="rainfrog">
 <meta property="og:title" content="rainfrog">
-<meta property="og:description" content="Six national weather models, compared for the next 24 hours.">
+<meta property="og:description" content="Six national weather models, compared side by side.">
 <meta property="og:url" content="https://weather.homolova.sk/">
 <meta property="og:image" content="https://weather.homolova.sk/social-preview.png">
 <meta property="og:image:width" content="1200">
@@ -20,7 +20,7 @@
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="rainfrog">
-<meta name="twitter:description" content="Six national weather models, compared for the next 24 hours.">
+<meta name="twitter:description" content="Six national weather models, compared side by side.">
 <meta name="twitter:image" content="https://weather.homolova.sk/social-preview.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -40,9 +40,9 @@
     --c-icon: #d65d4a;
     --c-ecmwf: #4f8fdb;
     --c-gfs: #4fb37a;
-    --c-gem: #e0a13d;
+    --c-gem: #e0c23d;
     --c-ukmo: #a884d6;
-    --c-meteofrance: #3fb6b0;
+    --c-meteofrance: #29b6d8;
     --risk-storm: #e35b5b;
     --risk-rain: #4f8fdb;
     --risk-snow: #7fd9e6;
@@ -98,7 +98,7 @@
   }
   .results.show{display:block;}
   .result-item{
-    padding:10px 14px;
+    padding:13px 14px;
     cursor:pointer;
     font-size:13px;
     border-bottom:1px solid var(--grid-line);
@@ -107,7 +107,7 @@
   .result-item:last-child{border-bottom:none;}
   .result-item:hover{background:#1c2733;}
   .result-item .rname{color:var(--ink);}
-  .result-item .rmeta{color:var(--ink-faint);font-size:11px;white-space:nowrap;}
+  .result-item .rmeta{color:var(--ink-dim);font-size:11px;white-space:nowrap;}
 
   .remember-toggle{
     display:flex;align-items:center;gap:7px;
@@ -115,7 +115,8 @@
     margin-top:10px;cursor:pointer;user-select:none;
   }
   .remember-toggle input{accent-color:var(--c-ecmwf);width:14px;height:14px;cursor:pointer;}
-  .status{color:var(--ink-faint);font-size:12px;margin-top:10px;min-height:16px;}
+  .status{color:var(--ink-dim);font-size:12px;margin-top:10px;min-height:16px;}
+  .status-error{color:#e8a48c;}
 
   /* hero spread */
   .hero{
@@ -135,16 +136,16 @@
     border-radius:20px;padding:3px;gap:2px;margin-top:10px;
   }
   .day-switch-btn{
-    font-family:'IBM Plex Mono',monospace;font-size:12px;
-    color:var(--ink-faint);background:transparent;border:none;
-    border-radius:16px;padding:6px 16px;cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
+    color:var(--ink-dim);background:transparent;border:none;
+    border-radius:16px;padding:9px 16px;cursor:pointer;
   }
-  .day-switch-btn:hover:not(.active){color:var(--ink-dim);}
-  .day-switch-btn.active{background:var(--bg-card);color:var(--ink);}
+  .day-switch-btn:hover:not(.active){color:var(--ink);}
+  .day-switch-btn.active{background:var(--c-ecmwf);color:#0a121a;}
   .hero-right{text-align:right;}
   .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--ink);}
-  .hero-now-range{font-size:11px;color:var(--ink-faint);margin-top:2px;}
-  .hero-astro{font-size:11px;color:var(--ink-faint);margin-top:6px;white-space:nowrap;}
+  .hero-now-range{font-size:11px;color:var(--ink-dim);margin-top:2px;}
+  .hero-astro{font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap;}
   .chart-title{
     font-family:'Space Grotesk',sans-serif;
     font-weight:600;
@@ -152,8 +153,11 @@
     color:var(--ink);
     margin:20px 0 10px;
   }
-  .temp-chart-wrap{margin:0 0 20px;}
-  .chart-caption{font-size:10px;color:var(--ink-faint);margin-top:6px;}
+  .temp-chart-wrap{
+    margin:0 0 20px;background:var(--bg-card);border:1px solid var(--grid-line);
+    border-radius:6px;padding:14px 12px 4px;
+  }
+  .chart-caption{font-size:10px;color:var(--ink-dim);margin-top:6px;}
 
   .hazard-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
   .hazard-chip{
@@ -168,14 +172,14 @@
   .hazard-high .hazard-label{color:#f0b3ab;}
   .hazard-low .hazard-dot{background:#e0a13d;}
   .hazard-low .hazard-label{color:#e8d2ab;}
-  .hazard-count{color:var(--ink-faint);font-size:10px;}
+  .hazard-count{color:var(--ink-dim);font-size:10px;}
 
-  .strip{position:relative;height:64px;margin:0 6px 6px;}
-  .strip-line{position:absolute;left:0;right:0;top:38px;height:1px;background:var(--grid-line);}
-  .strip-band{position:absolute;top:34px;height:9px;background:linear-gradient(90deg, rgba(215,205,176,.06), rgba(215,205,176,.16), rgba(215,205,176,.06));border-radius:5px;}
-  .strip-dot{position:absolute;top:31px;width:15px;height:15px;border-radius:50%;border:2px solid var(--bg-panel);transform:translateX(-50%);}
+  .strip{position:relative;height:78px;margin:0 6px 6px;}
+  .strip-line{position:absolute;left:0;right:0;top:52px;height:1px;background:var(--grid-line);}
+  .strip-band{position:absolute;top:48px;height:9px;background:linear-gradient(90deg, rgba(215,205,176,.06), rgba(215,205,176,.16), rgba(215,205,176,.06));border-radius:5px;}
+  .strip-dot{position:absolute;top:45px;width:15px;height:15px;border-radius:50%;border:2px solid var(--bg-panel);transform:translateX(-50%);}
   .strip-val{position:absolute;top:0;font-size:11px;font-weight:600;transform:translateX(-50%);white-space:nowrap;}
-  .strip-axis{position:absolute;top:48px;font-size:10px;color:var(--ink-faint);transform:translateX(-50%);}
+  .strip-axis{position:absolute;top:62px;font-size:10px;color:var(--ink-dim);transform:translateX(-50%);}
 
   .legend{display:flex;flex-wrap:wrap;gap:12px;margin:2px 0 22px;}
   .legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);}
@@ -183,7 +187,7 @@
 
   .no-data{font-size:11px;color:var(--ink-faint);padding:20px 0;text-align:center;}
 
-  footer{margin-top:36px;font-size:11px;color:var(--ink-faint);line-height:1.6;}
+  footer{margin-top:36px;font-size:11px;color:var(--ink-dim);line-height:1.6;}
   footer a{color:var(--ink-dim);}
 
   @media (max-width:640px){
@@ -199,7 +203,7 @@
 <div class="wrap">
   <header>
     <h1>rain<span>frog</span></h1>
-    <div class="sub">Six national weather models, compared for the next 24 hours.</div>
+    <div class="sub">Six national weather models, compared side by side.</div>
     <div class="search-box">
       <input id="searchInput" type="text" placeholder="Search a place… (e.g. Innsbruck)" autocomplete="off">
       <div class="results" id="results"></div>
@@ -333,7 +337,7 @@ function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, topOffset) {
       }
       const x = xFor((seg.start + seg.end) / 2);
       const label = si === 0 ? 'Today' : WEEKDAY_ABBR[new Date(seg.date + 'T00:00:00Z').getUTCDay()];
-      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${dayLabelY.toFixed(1)}" font-size="10" fill="var(--ink-faint)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
+      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${dayLabelY.toFixed(1)}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
     });
     dayLines = dayLineParts.join('');
     dayLabels = dayLabelParts.join('');
@@ -496,7 +500,7 @@ async function loadPlace(place) {
   if (!ok.length) {
     const firstError = settled.find(s => s.status === 'rejected');
     const reason = firstError ? firstError.reason.message : 'unknown error';
-    statusBox.innerHTML = `Could not reach Open-Meteo (${escapeHtml(reason)}). This can happen if your network blocks outside API calls. Try again, or try another place.`;
+    statusBox.innerHTML = `<span class="status-error">Could not reach Open-Meteo (${escapeHtml(reason)}). This can happen if your network blocks outside API calls. Try again, or try another place.</span>`;
     return;
   }
 
@@ -712,7 +716,7 @@ function renderHero(perModel) {
   const dots = sorted.map((m, i) => {
     const pct = ((m.totalPrecip - lo) / range) * 100;
     return `<div class="strip-dot" style="left:${pct}%; background:${m.color};" title="${m.name}: ${m.totalPrecip.toFixed(1)}mm"></div>
-      <div class="strip-val" style="left:${pct}%; top:${(i % 2) * 14}px; color:${m.color};">${m.totalPrecip.toFixed(1)}mm</div>`;
+      <div class="strip-val" style="left:${pct}%; top:${(i % 3) * 14}px; color:${m.color};">${m.totalPrecip.toFixed(1)}mm</div>`;
   }).join('');
 
   box.innerHTML = `
@@ -775,7 +779,7 @@ function buildLineChart(avail, seriesKey, opts) {
     const val = vMin + (vRange * s / steps);
     const y = yFor(val);
     gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
-      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono">${Math.round(val)}${unit}</text>`);
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-dim)" font-family="IBM Plex Mono">${Math.round(val)}${unit}</text>`);
   }
 
   const times = avail[0].times;
@@ -846,7 +850,7 @@ function buildPrecipChart(avail, width) {
     const val = vMax * s / steps;
     const y = yFor(val);
     gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
-      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono">${val.toFixed(val < 2 ? 1 : 0)}mm</text>`);
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-dim)" font-family="IBM Plex Mono">${val.toFixed(val < 2 ? 1 : 0)}mm</text>`);
   }
 
   const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, dotOffset);
