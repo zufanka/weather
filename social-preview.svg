@@ -11,14 +11,14 @@
     <tspan fill="#e9e4d6">rain</tspan><tspan fill="#4f8fdb">frog</tspan>
   </text>
 
-  <text x="90" y="390" font-family="DejaVu Sans Mono" font-size="26" fill="#8fa0ab">Six national weather models, compared for the next 24 hours.</text>
+  <text x="90" y="390" font-family="DejaVu Sans Mono" font-size="26" fill="#8fa0ab">Six national weather models, compared.</text>
 
   <g>
     <circle cx="90"  cy="450" r="10" fill="#d65d4a"/>
     <circle cx="140" cy="450" r="10" fill="#4f8fdb"/>
     <circle cx="190" cy="450" r="10" fill="#4fb37a"/>
-    <circle cx="240" cy="450" r="10" fill="#e0a13d"/>
+    <circle cx="240" cy="450" r="10" fill="#e0c23d"/>
     <circle cx="290" cy="450" r="10" fill="#a884d6"/>
-    <circle cx="340" cy="450" r="10" fill="#3fb6b0"/>
+    <circle cx="340" cy="450" r="10" fill="#29b6d8"/>
   </g>
 </svg>
