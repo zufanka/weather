@@ -888,7 +888,7 @@ function renderHero(perModel) {
     </div>
     ${sectionHead('Temperature', 'Hourly temperature from each model over the selected time range. Where the lines diverge, the models disagree on how warm or cold it will get.')}
     <div class="temp-chart-wrap" id="tempChartHolder"></div>
-    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount (or, with a model filter active, bars are colored per model instead), and the dot under each bar shows the average chance of rain that hour.')}
+    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount (or, with a model filter active, bars are colored per model instead), the dot under each bar shows the average chance of rain that hour, and a ⚡ above an hour means at least one model forecasts thunderstorms then (bolder the more models agree).')}
     <div class="temp-chart-wrap">
       <div class="spread-block">
         <div class="sub-head">Total</div>
@@ -1005,12 +1005,17 @@ const BAR_LAYER_OPACITY = 0.32;
 const BAR_FILTERED_DIMMED_OPACITY = 0.18;
 const BAR_FILTERED_SELECTED_OPACITY = 0.85;
 const CONFIDENCE_DOT_ROW = 14; // px reserved between the plot and the hour-label row
+// Mirrors CONFIDENCE_DOT_ROW, but above the plot rather than below it: a
+// band reserved for the per-hour thunderbolt markers so they never crowd
+// the topmost gridline/value label.
+const THUNDER_ROW = 14;
 function buildPrecipChart(avail, width, selected) {
   const n = avail[0].times.length;
   const isMultiDay = n > 24;
   const dotOffset = CONFIDENCE_DOT_ROW;
-  const W = width || 1000, H = 220 + dotOffset + (isMultiDay ? 14 : 0);
-  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = (isMultiDay ? 40 : 26) + dotOffset;
+  const thunderOffset = THUNDER_ROW;
+  const W = width || 1000, H = 220 + dotOffset + thunderOffset + (isMultiDay ? 14 : 0);
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16 + thunderOffset, PAD_B = (isMultiDay ? 40 : 26) + dotOffset;
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
   const colW = plotW / n;
@@ -1032,7 +1037,11 @@ function buildPrecipChart(avail, width, selected) {
     const amounts = avail.map(m => ({ id: m.id, color: m.color, v: m.precs[i] || 0 })).filter(a => a.v > 0);
     const probs = avail.map(m => m.precipProb[i]).filter(p => p !== null && p !== undefined);
     const avgProb = probs.length ? probs.reduce((a, b) => a + b, 0) / probs.length : null;
-    hours.push({ amounts, avgProb, reporting: probs.length, total: avail.length });
+    // Same unfiltered `avail` set the confidence dots read from, so the
+    // thunder marker's "n of total" always means all models, not just the
+    // ones a model filter happens to have selected.
+    const thunderModels = avail.filter(m => m.hourFlags[i]?.thunder).map(m => m.name);
+    hours.push({ amounts, avgProb, reporting: probs.length, total: avail.length, thunderModels });
   }
 
   const vMax = Math.max(1, Math.ceil(Math.max(0, ...hours.flatMap(h => h.amounts.map(a => a.v)))));
@@ -1050,9 +1059,14 @@ function buildPrecipChart(avail, width, selected) {
   }
 
   const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, dotOffset);
+  // Baseline for the thunderbolt glyphs, sitting in the THUNDER_ROW band
+  // just above the plot's top edge (and its topmost gridline) rather than
+  // on it.
+  const thunderY = PAD_T - 4;
 
   const bars = [];
   const dots = [];
+  const thunderMarks = [];
   hours.forEach((h, i) => {
     const x = xFor(i);
     const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
@@ -1089,6 +1103,14 @@ function buildPrecipChart(avail, width, selected) {
       const title = `${hourLabel}: ${Math.round(h.avgProb)}% avg chance of rain (${h.reporting}/${h.total} models)`;
       dots.push(`<circle cx="${x.toFixed(1)}" cy="${dotY.toFixed(1)}" r="${dotR.toFixed(1)}" fill="var(--c-confidence)" opacity="${opacity.toFixed(2)}"><title>${title}</title></circle>`);
     }
+
+    if (h.thunderModels.length) {
+      // Same fade-by-agreement formula as the confidence dot above: a lone
+      // outlier model reads faint, unanimous agreement reads solid.
+      const opacity = 0.15 + (h.thunderModels.length / h.total) * 0.75;
+      const title = `${hourLabel}: thunderstorms predicted by ${h.thunderModels.length} of ${h.total} models (${h.thunderModels.join(', ')})`;
+      thunderMarks.push(`<text x="${x.toFixed(1)}" y="${thunderY.toFixed(1)}" font-size="11" text-anchor="middle" opacity="${opacity.toFixed(2)}">⚡<title>${title}</title></text>`);
+    }
   });
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
@@ -1097,6 +1119,7 @@ function buildPrecipChart(avail, width, selected) {
     ${bars.join('')}
     <line x1="${PAD_L}" y1="${plotBottom.toFixed(1)}" x2="${W - PAD_R}" y2="${plotBottom.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
     ${dots.join('')}
+    ${thunderMarks.join('')}
     ${axis.dayLines}
     ${axis.hourLabels}
     ${axis.dayLabels}
