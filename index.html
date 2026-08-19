@@ -828,7 +828,10 @@ function buildPrecipChart(avail, width) {
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
   const colW = plotW / n;
-  const barW = Math.max(6, colW - 4);
+  // Gap shrinks with the column itself so barW never exceeds colW — at 72h
+  // on a narrow phone, colW can drop below the old fixed 6px floor, which
+  // made bars wider than their own column and bleed into neighboring hours.
+  const barW = Math.max(1, colW - Math.min(4, colW * 0.25));
 
   const times = avail[0].times;
   const hours = [];
