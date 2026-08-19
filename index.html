@@ -181,8 +181,12 @@
     border-radius:6px;padding:14px 12px 4px;
   }
   .chart-caption{font-size:10px;color:var(--ink-dim);margin-top:6px;}
-  .chart-caption-lead{font-size:10px;color:var(--ink-dim);margin:0 0 6px;}
   .spread-block{border-bottom:1px solid var(--grid-line);padding-bottom:8px;margin-bottom:12px;}
+  .sub-head{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;
+    font-size:12px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink);margin:0 0 8px;
+  }
 
   .hazard-row{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:18px;}
   .hazard-chip{
@@ -197,11 +201,14 @@
   .hazard-high .hazard-label{color:#f0b3ab;}
   .hazard-low .hazard-dot{background:#e0a13d;}
   .hazard-low .hazard-label{color:#e8d2ab;}
+  .hazard-dim{opacity:.45;}
+  .hazard-dim .hazard-dot{background:var(--ink-faint);}
+  .hazard-dim .hazard-label{color:var(--ink-dim);}
   .hazard-count{color:var(--ink-dim);font-size:10px;}
 
   .strip{position:relative;height:78px;margin:0 6px 6px;}
-  .strip-line{position:absolute;left:0;right:0;top:52px;height:1px;background:var(--grid-line);}
-  .strip-band{position:absolute;top:48px;height:9px;background:linear-gradient(90deg, rgba(215,205,176,.06), rgba(215,205,176,.16), rgba(215,205,176,.06));border-radius:5px;}
+  .strip-line{position:absolute;left:0;right:0;top:52px;height:2px;background:var(--ink-faint);border-radius:1px;}
+  .strip-tick{position:absolute;top:48px;width:1px;height:10px;background:var(--ink-faint);transform:translateX(-50%);}
   .strip-dot{position:absolute;top:45px;width:15px;height:15px;border-radius:50%;border:2px solid var(--bg-panel);transform:translateX(-50%);}
   .strip-val{position:absolute;top:0;font-size:11px;font-weight:600;transform:translateX(-50%);white-space:nowrap;}
   .strip-axis{position:absolute;top:62px;font-size:10px;color:var(--ink);transform:translateX(-50%);}
@@ -801,23 +808,26 @@ function renderHero(perModel) {
   const activeSel = effectiveSelection(avail);
 
   // Hazard chips recompute their counts/denominator against the filtered
-  // set rather than dimming individual chips — a hazard only one of your
-  // selected models flags would otherwise sit at "1/6", reading as a
-  // consensus long-shot when among your selection it might be unanimous.
-  // Recomputing means a hazard absent from every selected model just drops
-  // off the row instead of lingering grayed-out; the rest of the hero
-  // (charts, strip) keeps the "gray, don't hide" approach since those show
-  // per-model marks where the full context is worth keeping on screen.
+  // set — a hazard only one of your selected models flags would otherwise
+  // sit at "1/6", reading as a consensus long-shot when among your
+  // selection it might be unanimous. But *which* chips appear is decided
+  // once, from every available model, not the filtered set: if a chip's
+  // presence itself flipped on every filter click, the row's height (and
+  // everything below it) would jump around as you clicked through the
+  // legend. So a hazard none of your selected models flags dims out
+  // in place, matching the "gray, don't hide" approach the charts and
+  // strip already use, rather than disappearing.
   const hazardBase = activeSel ? avail.filter(m => activeSel.has(m.id)) : avail;
 
   const hazardRows = HAZARDS.map(h => {
     const hits = hazardBase.filter(m => m.flags[h.flagKey]);
-    return { ...h, count: hits.length, models: hits };
-  }).filter(h => h.count > 0)
+    const everFlagged = avail.some(m => m.flags[h.flagKey]);
+    return { ...h, count: hits.length, models: hits, everFlagged };
+  }).filter(h => h.everFlagged)
     .sort((a, b) => b.count - a.count);
 
   const chips = hazardRows.map(h => {
-    const level = h.count >= hazardBase.length * 0.5 ? 'high' : 'low';
+    const level = h.count === 0 ? 'dim' : (h.count >= hazardBase.length * 0.5 ? 'high' : 'low');
     return `<div class="hazard-chip hazard-${level}">
       <span class="hazard-dot"></span>
       <span class="hazard-label">${escapeHtml(h.label)}</span>
@@ -826,13 +836,11 @@ function renderHero(perModel) {
   }).join('');
 
   const precipVals = avail.map(m => m.totalPrecip);
-  const pMin = Math.min(...precipVals), pMax = Math.max(...precipVals);
+  const pMax = Math.max(...precipVals);
 
   const lo = 0, hi = Math.max(1, Math.ceil(pMax + 1));
   const range = hi - lo || 1;
   const sorted = [...avail].sort((a, b) => a.totalPrecip - b.totalPrecip);
-  const bandLeft = ((pMin - lo) / range) * 100;
-  const bandWidth = ((pMax - pMin) / range) * 100;
 
   const dots = sorted.map((m, i) => {
     const pct = ((m.totalPrecip - lo) / range) * 100;
@@ -880,18 +888,20 @@ function renderHero(perModel) {
     </div>
     ${sectionHead('Temperature', 'Hourly temperature from each model over the selected time range. Where the lines diverge, the models disagree on how warm or cold it will get.')}
     <div class="temp-chart-wrap" id="tempChartHolder"></div>
-    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount, and the dot under each bar shows the average chance of rain that hour.')}
+    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount (or, with a model filter active, bars are colored per model instead), and the dot under each bar shows the average chance of rain that hour.')}
     <div class="temp-chart-wrap">
       <div class="spread-block">
-        <div class="chart-caption-lead">Total across the ${activeRange}h view — one dot per model</div>
+        <div class="sub-head">Total</div>
         <div class="strip">
-          <div class="strip-band" style="left:${bandLeft}%; width:${bandWidth}%;"></div>
           <div class="strip-line"></div>
+          <div class="strip-tick" style="left:0%;"></div>
+          <div class="strip-tick" style="left:100%;"></div>
           ${dots}
           <div class="strip-axis" style="left:0%;">${lo}mm</div>
           <div class="strip-axis" style="left:100%;">${hi}mm</div>
         </div>
       </div>
+      <div class="sub-head">Hourly</div>
       <div id="precipChartHolder"></div>
     </div>
   `;
@@ -1008,6 +1018,11 @@ function buildPrecipChart(avail, width, selected) {
   // on a narrow phone, colW can drop below the old fixed 6px floor, which
   // made bars wider than their own column and bleed into neighboring hours.
   const barW = Math.max(1, colW - Math.min(4, colW * 0.25));
+  // Same overlap problem as barW, one column down: a fixed r=3 (6px wide)
+  // dot is wider than colW once 72 hours are squeezed into a phone screen,
+  // so neighboring hours' confidence dots ran into each other. Cap the
+  // radius to the column's own width, leaving a 1px gap either side.
+  const dotR = Math.min(3, Math.max(1, colW / 2 - 0.5));
 
   const times = avail[0].times;
   const hours = [];
@@ -1072,7 +1087,7 @@ function buildPrecipChart(avail, width, selected) {
       const opacity = 0.15 + (Math.max(0, Math.min(100, h.avgProb)) / 100) * 0.75;
       const dotY = plotBottom + dotOffset / 2;
       const title = `${hourLabel}: ${Math.round(h.avgProb)}% avg chance of rain (${h.reporting}/${h.total} models)`;
-      dots.push(`<circle cx="${x.toFixed(1)}" cy="${dotY.toFixed(1)}" r="3" fill="var(--c-confidence)" opacity="${opacity.toFixed(2)}"><title>${title}</title></circle>`);
+      dots.push(`<circle cx="${x.toFixed(1)}" cy="${dotY.toFixed(1)}" r="${dotR.toFixed(1)}" fill="var(--c-confidence)" opacity="${opacity.toFixed(2)}"><title>${title}</title></circle>`);
     }
   });
 
@@ -1085,10 +1100,7 @@ function buildPrecipChart(avail, width, selected) {
     ${axis.dayLines}
     ${axis.hourLabels}
     ${axis.dayLabels}
-  </svg>
-  <div class="chart-caption">${selected
-    ? 'Bars colored per model, dimmed for models outside your filter · dot = average chance of rain that hour, darker is higher'
-    : 'Bar shade = how many models agree on that amount, darker is more · dot = average chance of rain that hour, darker is higher'}</div>`;
+  </svg>`;
 }
 
 // load a remembered place if one was saved, otherwise default to Vienna, Austria
