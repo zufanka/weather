@@ -152,14 +152,39 @@
     font-size:16px;
     color:var(--ink);
     margin:20px 0 10px;
+    display:flex;align-items:center;gap:7px;
   }
+
+  /* (i) info icon that opens a small explanatory tooltip on click/tap —
+     click rather than hover so it works the same on mobile and desktop. */
+  .info-icon{
+    position:relative;
+    display:inline-flex;align-items:center;justify-content:center;
+    width:16px;height:16px;flex:none;
+    border-radius:50%;border:1px solid var(--ink-faint);background:transparent;
+    color:var(--ink-dim);font-family:'Space Grotesk',sans-serif;
+    font-size:10px;font-weight:600;line-height:1;cursor:pointer;padding:0;
+  }
+  .info-icon:hover,.info-icon:focus-visible{border-color:var(--c-ecmwf);color:var(--ink);outline:none;}
+  .info-icon .info-tooltip{
+    display:none;position:absolute;z-index:30;
+    top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+    width:min(260px,72vw);
+    background:var(--bg-card);border:1px solid var(--grid-line);border-radius:6px;
+    padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.4);
+    font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:400;
+    line-height:1.5;color:var(--ink-dim);text-align:left;white-space:normal;cursor:auto;
+  }
+  .info-icon.open .info-tooltip{display:block;}
   .temp-chart-wrap{
     margin:0 0 20px;background:var(--bg-card);border:1px solid var(--grid-line);
     border-radius:6px;padding:14px 12px 4px;
   }
   .chart-caption{font-size:10px;color:var(--ink-dim);margin-top:6px;}
+  .chart-caption-lead{font-size:10px;color:var(--ink-dim);margin:0 0 6px;}
+  .spread-block{border-bottom:1px solid var(--grid-line);padding-bottom:8px;margin-bottom:12px;}
 
-  .hazard-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px;}
+  .hazard-row{display:flex;flex-wrap:wrap;gap:8px;padding-bottom:18px;}
   .hazard-chip{
     display:flex;align-items:center;gap:7px;
     background:#1a232d;border:1px solid var(--grid-line);
@@ -179,11 +204,29 @@
   .strip-band{position:absolute;top:48px;height:9px;background:linear-gradient(90deg, rgba(215,205,176,.06), rgba(215,205,176,.16), rgba(215,205,176,.06));border-radius:5px;}
   .strip-dot{position:absolute;top:45px;width:15px;height:15px;border-radius:50%;border:2px solid var(--bg-panel);transform:translateX(-50%);}
   .strip-val{position:absolute;top:0;font-size:11px;font-weight:600;transform:translateX(-50%);white-space:nowrap;}
-  .strip-axis{position:absolute;top:62px;font-size:10px;color:var(--ink-dim);transform:translateX(-50%);}
+  .strip-axis{position:absolute;top:62px;font-size:10px;color:var(--ink);transform:translateX(-50%);}
 
-  .legend{display:flex;flex-wrap:wrap;gap:12px;margin:2px 0 22px;}
-  .legend-item{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-dim);}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 22px;}
+  .legend-item{
+    display:flex;align-items:center;gap:6px;margin:0;
+    font-family:inherit;font-size:11px;color:var(--ink-dim);
+    background:transparent;border:1px solid transparent;border-radius:20px;
+    padding:5px 11px 5px 9px;cursor:pointer;
+    transition:opacity .15s,border-color .15s,background .15s,color .15s;
+  }
+  .legend-item:hover:not(:disabled){border-color:var(--grid-line);color:var(--ink);}
+  .legend-item:focus-visible{outline:2px solid var(--c-ecmwf);outline-offset:2px;}
+  /* Selected: filled pill in the model's own color (via the --mc custom
+     property each item carries) plus a checkmark, so the state reads even
+     to someone who can't distinguish the dot colors. Dimmed: present but
+     not part of the filter — same color, faded. Unavailable is a separate,
+     always-gray look (see .legend-item.is-unavailable below) so "no data
+     here" is never mistaken for "not selected". */
+  .legend-item.is-selected{background:#1a232d;border-color:var(--mc);color:var(--ink);}
+  .legend-item.is-dimmed{opacity:.4;}
+  .legend-item.is-unavailable{opacity:.35;cursor:default;}
   .legend-dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .legend-check{font-size:10px;color:var(--mc);}
 
   .no-data{font-size:11px;color:var(--ink-faint);padding:20px 0;text-align:center;}
 
@@ -306,7 +349,7 @@ function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, topOffset) {
     if (!t) continue;
     const x = xFor(i);
     vLines.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${(PAD_T + plotH).toFixed(1)}" stroke="var(--grid-line)" stroke-width="1" opacity="0.5"/>`);
-    hourLabels.push(`<text x="${x.toFixed(1)}" y="${hourLabelY.toFixed(1)}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono">${hourAxisLabel(t, n)}</text>`);
+    hourLabels.push(`<text x="${x.toFixed(1)}" y="${hourLabelY.toFixed(1)}" font-size="10" fill="var(--ink)" text-anchor="middle" font-family="IBM Plex Mono">${hourAxisLabel(t, n)}</text>`);
   }
 
   let dayLines = '', dayLabels = '';
@@ -337,7 +380,7 @@ function buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, topOffset) {
       }
       const x = xFor((seg.start + seg.end) / 2);
       const label = si === 0 ? 'Today' : WEEKDAY_ABBR[new Date(seg.date + 'T00:00:00Z').getUTCDay()];
-      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${dayLabelY.toFixed(1)}" font-size="10" fill="var(--ink-dim)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
+      dayLabelParts.push(`<text x="${x.toFixed(1)}" y="${dayLabelY.toFixed(1)}" font-size="10" fill="var(--ink)" text-anchor="middle" font-family="IBM Plex Mono" letter-spacing="0.03em">${label}</text>`);
     });
     dayLines = dayLineParts.join('');
     dayLabels = dayLabelParts.join('');
@@ -364,6 +407,25 @@ let activeRange = 24;
 let lastPlace = null;
 let lastEntries = null;
 let lastAstro = null;
+
+// Model ids the user has clicked on in the legend, surviving re-renders the
+// same way activeRange does (render() rebuilds the DOM from scratch, so the
+// state has to live outside it). Empty = no filter, show everything at full
+// strength — filtering is opt-in.
+let selectedModels = new Set();
+
+// The chosen ids aren't necessarily present at the currently-searched place
+// (a model can be selected, then the user searches somewhere it doesn't
+// cover). This resolves the raw selection against `avail` (models that
+// actually returned data) into the Set every chart should treat as "the
+// filter" — or null if that intersection is empty, meaning either nothing
+// is selected or everything selected is unavailable here. Either way, null
+// means render at full strength rather than a filter that matches nothing.
+function effectiveSelection(avail) {
+  if (!selectedModels.size) return null;
+  const ids = avail.filter(m => selectedModels.has(m.id)).map(m => m.id);
+  return ids.length ? new Set(ids) : null;
+}
 
 // Charts are drawn at the exact measured pixel width of their container
 // (see renderResponsiveCharts), so 1 SVG unit = 1 CSS pixel and text is
@@ -398,15 +460,43 @@ rememberCheckbox.addEventListener('change', () => {
 });
 
 // Delegated on #app (not the buttons themselves) since render() rebuilds
-// the whole hero — including these buttons — on every place load and tab
-// switch alike.
+// the whole hero — including these buttons — on every place load, tab
+// switch, and model-filter click alike.
 app.addEventListener('click', (e) => {
-  const btn = e.target.closest('.day-switch-btn');
-  if (!btn || !lastEntries) return;
-  const hours = Number(btn.dataset.hours);
-  if (hours === activeRange) return;
-  activeRange = hours;
-  render(lastPlace, lastEntries, lastAstro);
+  if (!lastEntries) return;
+
+  // (i) tooltips: toggle the clicked one, close any other that was open —
+  // pure DOM class toggling, no re-render, so it doesn't disturb chart/
+  // filter state or cause a flash.
+  const infoBtn = e.target.closest('.info-icon');
+  if (infoBtn) {
+    const wasOpen = infoBtn.classList.contains('open');
+    document.querySelectorAll('.info-icon.open').forEach(el => {
+      el.classList.remove('open');
+      el.setAttribute('aria-expanded', 'false');
+    });
+    if (!wasOpen) {
+      infoBtn.classList.add('open');
+      infoBtn.setAttribute('aria-expanded', 'true');
+    }
+    return;
+  }
+
+  const dayBtn = e.target.closest('.day-switch-btn');
+  if (dayBtn) {
+    const hours = Number(dayBtn.dataset.hours);
+    if (hours === activeRange) return;
+    activeRange = hours;
+    render(lastPlace, lastEntries, lastAstro);
+    return;
+  }
+
+  const legendBtn = e.target.closest('.legend-item');
+  if (legendBtn && !legendBtn.disabled) {
+    const id = legendBtn.dataset.model;
+    if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
+    render(lastPlace, lastEntries, lastAstro);
+  }
 });
 
 searchInput.addEventListener('input', () => {
@@ -419,6 +509,12 @@ searchInput.addEventListener('input', () => {
 document.addEventListener('click', (e) => {
   if (!resultsBox.contains(e.target) && e.target !== searchInput) {
     resultsBox.classList.remove('show');
+  }
+  if (!e.target.closest('.info-icon')) {
+    document.querySelectorAll('.info-icon.open').forEach(el => {
+      el.classList.remove('open');
+      el.setAttribute('aria-expanded', 'false');
+    });
   }
 });
 
@@ -461,6 +557,16 @@ function renderResults(list) {
 
 function escapeHtml(s) {
   return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// A section headline with a click-to-open (i) tooltip explaining what the
+// section shows. Click rather than hover so it's equally usable on a phone.
+function sectionHead(title, info) {
+  return `<div class="chart-title">${escapeHtml(title)}
+    <button type="button" class="info-icon" aria-label="About ${escapeHtml(title)}" aria-haspopup="true" aria-expanded="false">i
+      <span class="info-tooltip" role="tooltip">${escapeHtml(info)}</span>
+    </button>
+  </div>`;
 }
 
 async function fetchModel(place, model) {
@@ -689,18 +795,33 @@ function renderHero(perModel) {
     nowBox.innerHTML = '';
   }
 
+  // Resolve the user's raw legend selection against the models actually
+  // available here (see effectiveSelection). Every chart below takes this
+  // resolved value, not selectedModels directly.
+  const activeSel = effectiveSelection(avail);
+
+  // Hazard chips recompute their counts/denominator against the filtered
+  // set rather than dimming individual chips — a hazard only one of your
+  // selected models flags would otherwise sit at "1/6", reading as a
+  // consensus long-shot when among your selection it might be unanimous.
+  // Recomputing means a hazard absent from every selected model just drops
+  // off the row instead of lingering grayed-out; the rest of the hero
+  // (charts, strip) keeps the "gray, don't hide" approach since those show
+  // per-model marks where the full context is worth keeping on screen.
+  const hazardBase = activeSel ? avail.filter(m => activeSel.has(m.id)) : avail;
+
   const hazardRows = HAZARDS.map(h => {
-    const hits = avail.filter(m => m.flags[h.flagKey]);
+    const hits = hazardBase.filter(m => m.flags[h.flagKey]);
     return { ...h, count: hits.length, models: hits };
   }).filter(h => h.count > 0)
     .sort((a, b) => b.count - a.count);
 
   const chips = hazardRows.map(h => {
-    const level = h.count >= avail.length * 0.5 ? 'high' : 'low';
+    const level = h.count >= hazardBase.length * 0.5 ? 'high' : 'low';
     return `<div class="hazard-chip hazard-${level}">
       <span class="hazard-dot"></span>
       <span class="hazard-label">${escapeHtml(h.label)}</span>
-      <span class="hazard-count">${h.count}/${avail.length}</span>
+      <span class="hazard-count">${h.count}/${hazardBase.length}</span>
     </div>`;
   }).join('');
 
@@ -715,26 +836,63 @@ function renderHero(perModel) {
 
   const dots = sorted.map((m, i) => {
     const pct = ((m.totalPrecip - lo) / range) * 100;
-    return `<div class="strip-dot" style="left:${pct}%; background:${m.color};" title="${m.name}: ${m.totalPrecip.toFixed(1)}mm"></div>
-      <div class="strip-val" style="left:${pct}%; top:${(i % 3) * 14}px; color:${m.color};">${m.totalPrecip.toFixed(1)}mm</div>`;
+    const dimmed = activeSel && !activeSel.has(m.id);
+    const boosted = activeSel && !dimmed;
+    const dotColor = dimmed ? 'var(--ink-faint)' : m.color;
+    const dotExtra = dimmed ? 'opacity:.5;' : (boosted ? 'width:18px;height:18px;top:43.5px;z-index:2;' : '');
+    const valColor = dimmed ? 'var(--ink-faint)' : m.color;
+    const valExtra = dimmed ? 'opacity:.55;' : (boosted ? 'font-weight:700;z-index:2;' : '');
+    return `<div class="strip-dot" style="left:${pct}%; background:${dotColor}; ${dotExtra}" title="${m.name}: ${m.totalPrecip.toFixed(1)}mm"></div>
+      <div class="strip-val" style="left:${pct}%; top:${(i % 3) * 14}px; color:${valColor}; ${valExtra}">${m.totalPrecip.toFixed(1)}mm</div>`;
+  }).join('');
+
+  // Legend doubles as the filter control. Selected/dimmed state is driven
+  // by activeSel (so it only lights up for models actually present here);
+  // availability is a separate, always-on look (gray dot, disabled, can't
+  // be clicked) so "no data for this place" is never confusable with
+  // "not part of the filter" — the checkmark still shows for a selected
+  // model even when it happens to be unavailable at the current place, so
+  // the user can see their pick was remembered.
+  const legendItems = perModel.map(m => {
+    const rawSelected = selectedModels.has(m.id);
+    const classes = ['legend-item'];
+    let title;
+    if (!m.available) {
+      classes.push('is-unavailable');
+      title = `${m.name}: no data for this location`;
+    } else if (activeSel) {
+      if (activeSel.has(m.id)) { classes.push('is-selected'); title = `${m.name}: shown — click to remove from filter`; }
+      else { classes.push('is-dimmed'); title = `${m.name}: click to add to filter`; }
+    } else {
+      title = `${m.name}: click to filter to just this model`;
+    }
+    return `<button type="button" class="${classes.join(' ')}" data-model="${m.id}" ${!m.available ? 'disabled' : ''} aria-pressed="${rawSelected}" title="${escapeHtml(title)}" style="--mc:${m.color}">
+      <span class="legend-dot" style="background:${m.available ? m.color : 'var(--ink-faint)'};"></span>
+      ${escapeHtml(m.name)}${rawSelected ? '<span class="legend-check" aria-hidden="true">&check;</span>' : ''}
+    </button>`;
   }).join('');
 
   box.innerHTML = `
-    ${hazardRows.length ? `<div class="hazard-row">${chips}</div>` : ''}
+    <div class="hazard-row">${chips}</div>
+    ${sectionHead('Weather models', "Six national forecast models plotted together. Click a model's name to filter every chart down to just that one (or a few) — the rest stay visible, just grayed out for context.")}
     <div class="legend">
-      ${MODELS.map(m => `<div class="legend-item"><span class="legend-dot" style="background:${m.color};"></span>${m.name}</div>`).join('')}
+      ${legendItems}
     </div>
-    <div class="chart-title">Temperature</div>
+    ${sectionHead('Temperature', 'Hourly temperature from each model over the selected time range. Where the lines diverge, the models disagree on how warm or cold it will get.')}
     <div class="temp-chart-wrap" id="tempChartHolder"></div>
-    <div class="chart-title">Precipitation</div>
-    <div class="temp-chart-wrap" id="precipChartHolder"></div>
-    <div class="chart-title">Rainfall/snow spread</div>
-    <div class="strip">
-      <div class="strip-band" style="left:${bandLeft}%; width:${bandWidth}%;"></div>
-      <div class="strip-line"></div>
-      ${dots}
-      <div class="strip-axis" style="left:0%;">${lo}mm</div>
-      <div class="strip-axis" style="left:100%;">${hi}mm</div>
+    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount, and the dot under each bar shows the average chance of rain that hour.')}
+    <div class="temp-chart-wrap">
+      <div class="spread-block">
+        <div class="chart-caption-lead">Total across the ${activeRange}h view — one dot per model</div>
+        <div class="strip">
+          <div class="strip-band" style="left:${bandLeft}%; width:${bandWidth}%;"></div>
+          <div class="strip-line"></div>
+          ${dots}
+          <div class="strip-axis" style="left:0%;">${lo}mm</div>
+          <div class="strip-axis" style="left:100%;">${hi}mm</div>
+        </div>
+      </div>
+      <div id="precipChartHolder"></div>
     </div>
   `;
 
@@ -748,12 +906,13 @@ function renderResponsiveCharts() {
   const precipHolder = $('#precipChartHolder');
   if (!avail || !tempHolder || !precipHolder) return;
   const width = Math.max(260, Math.round(tempHolder.getBoundingClientRect().width));
-  tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width });
-  precipHolder.innerHTML = buildPrecipChart(avail, width);
+  const selected = effectiveSelection(avail);
+  tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width, selected });
+  precipHolder.innerHTML = buildPrecipChart(avail, width, selected);
 }
 
 function buildLineChart(avail, seriesKey, opts) {
-  const { unit = '', domainMin = null, domainMax = null, height = 220, width = 1000 } = opts || {};
+  const { unit = '', domainMin = null, domainMax = null, height = 220, width = 1000, selected = null } = opts || {};
   const n = avail[0][seriesKey].length;
   const isMultiDay = n > 24;
   // A multi-day chart gets a taller bottom band (day axis under the hour
@@ -779,13 +938,17 @@ function buildLineChart(avail, seriesKey, opts) {
     const val = vMin + (vRange * s / steps);
     const y = yFor(val);
     gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
-      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-dim)" font-family="IBM Plex Mono">${Math.round(val)}${unit}</text>`);
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink)" font-family="IBM Plex Mono">${Math.round(val)}${unit}</text>`);
   }
 
   const times = avail[0].times;
   const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T);
 
-  const lines = avail.map(m => {
+  // With a filter active, draw non-selected lines first (low opacity, thin)
+  // so they sit underneath, then the selected ones last (full opacity,
+  // thicker) so they paint on top — SVG has no z-index, only paint order.
+  const order = selected ? [...avail].sort((a, b) => (selected.has(a.id) ? 1 : 0) - (selected.has(b.id) ? 1 : 0)) : avail;
+  const lines = order.map(m => {
     const series = m[seriesKey];
     let path = '';
     series.forEach((v, i) => {
@@ -793,7 +956,10 @@ function buildLineChart(avail, seriesKey, opts) {
       const x = xFor(i), y = yFor(v);
       path += (path === '' ? `M${x.toFixed(1)},${y.toFixed(1)}` : ` L${x.toFixed(1)},${y.toFixed(1)}`);
     });
-    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2" opacity="0.9"/>`;
+    const isSel = !selected || selected.has(m.id);
+    const opacity = selected ? (isSel ? 1 : 0.25) : 0.9;
+    const strokeWidth = selected ? (isSel ? 2.5 : 1.5) : 2;
+    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="${strokeWidth}" opacity="${opacity}"/>`;
   }).join('');
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
@@ -818,8 +984,18 @@ function buildLineChart(avail, seriesKey, opts) {
 // A confidence dot beneath the axis carries the separate question of how
 // likely the models think rain is at all, on its own color.
 const BAR_LAYER_OPACITY = 0.32;
+// Filtered-mode alternative to the above: once a model filter is active,
+// "which models agree" stops being the question — "what do my chosen
+// models say, against the rest" is. So instead of one neutral color
+// layered by count, each bar goes back to being its own model's color
+// (the --c-* it already owns elsewhere in the UI), non-selected models
+// pushed down to a faint wash and selected ones raised to near-solid, and
+// selected bars are drawn last per hour so they paint over the dimmed ones
+// they overlap rather than being buried under them.
+const BAR_FILTERED_DIMMED_OPACITY = 0.18;
+const BAR_FILTERED_SELECTED_OPACITY = 0.85;
 const CONFIDENCE_DOT_ROW = 14; // px reserved between the plot and the hour-label row
-function buildPrecipChart(avail, width) {
+function buildPrecipChart(avail, width, selected) {
   const n = avail[0].times.length;
   const isMultiDay = n > 24;
   const dotOffset = CONFIDENCE_DOT_ROW;
@@ -836,13 +1012,15 @@ function buildPrecipChart(avail, width) {
   const times = avail[0].times;
   const hours = [];
   for (let i = 0; i < n; i++) {
-    const amounts = avail.map(m => m.precs[i] || 0).filter(v => v > 0);
+    // Keep each amount tied to its model (id/color), even in unfiltered
+    // mode, so the filtered-mode branch below doesn't need a second pass.
+    const amounts = avail.map(m => ({ id: m.id, color: m.color, v: m.precs[i] || 0 })).filter(a => a.v > 0);
     const probs = avail.map(m => m.precipProb[i]).filter(p => p !== null && p !== undefined);
     const avgProb = probs.length ? probs.reduce((a, b) => a + b, 0) / probs.length : null;
     hours.push({ amounts, avgProb, reporting: probs.length, total: avail.length });
   }
 
-  const vMax = Math.max(1, Math.ceil(Math.max(0, ...hours.flatMap(h => h.amounts))));
+  const vMax = Math.max(1, Math.ceil(Math.max(0, ...hours.flatMap(h => h.amounts.map(a => a.v)))));
   const xFor = chartXFor(PAD_L, plotW, n);
   const yFor = v => PAD_T + plotH - (Math.max(0, v) / vMax) * plotH;
   const plotBottom = PAD_T + plotH;
@@ -853,7 +1031,7 @@ function buildPrecipChart(avail, width) {
     const val = vMax * s / steps;
     const y = yFor(val);
     gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
-      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink-dim)" font-family="IBM Plex Mono">${val.toFixed(val < 2 ? 1 : 0)}mm</text>`);
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink)" font-family="IBM Plex Mono">${val.toFixed(val < 2 ? 1 : 0)}mm</text>`);
   }
 
   const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, dotOffset);
@@ -864,13 +1042,26 @@ function buildPrecipChart(avail, width) {
     const x = xFor(i);
     const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
 
-    h.amounts.forEach(v => {
-      const y = yFor(v);
-      const barH = plotBottom - y;
-      bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="var(--c-precip)" opacity="${BAR_LAYER_OPACITY}"/>`);
-    });
+    if (selected) {
+      // Selected models drawn last so they paint on top of the dimmed rest
+      // at the same x — see the comment above BAR_FILTERED_DIMMED_OPACITY.
+      const ordered = [...h.amounts].sort((a, b) => (selected.has(a.id) ? 1 : 0) - (selected.has(b.id) ? 1 : 0));
+      ordered.forEach(a => {
+        const y = yFor(a.v);
+        const barH = plotBottom - y;
+        const isSel = selected.has(a.id);
+        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${isSel ? BAR_FILTERED_SELECTED_OPACITY : BAR_FILTERED_DIMMED_OPACITY}"/>`);
+      });
+    } else {
+      h.amounts.forEach(a => {
+        const y = yFor(a.v);
+        const barH = plotBottom - y;
+        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="var(--c-precip)" opacity="${BAR_LAYER_OPACITY}"/>`);
+      });
+    }
     if (h.amounts.length) {
-      const min = Math.min(...h.amounts), max = Math.max(...h.amounts);
+      const vals = h.amounts.map(a => a.v);
+      const min = Math.min(...vals), max = Math.max(...vals);
       const range = min === max ? `${min.toFixed(1)}mm` : `${min.toFixed(1)}–${max.toFixed(1)}mm`;
       const title = `${hourLabel}: ${range} · ${h.amounts.length} of ${h.total} models predict rain`;
       const hitY = yFor(max);
@@ -895,7 +1086,9 @@ function buildPrecipChart(avail, width) {
     ${axis.hourLabels}
     ${axis.dayLabels}
   </svg>
-  <div class="chart-caption">Bar shade = how many models agree on that amount, darker is more · dot = average chance of rain that hour, darker is higher</div>`;
+  <div class="chart-caption">${selected
+    ? 'Bars colored per model, dimmed for models outside your filter · dot = average chance of rain that hour, darker is higher'
+    : 'Bar shade = how many models agree on that amount, darker is more · dot = average chance of rain that hour, darker is higher'}</div>`;
 }
 
 // load a remembered place if one was saved, otherwise default to Vienna, Austria
