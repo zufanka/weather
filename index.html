@@ -513,6 +513,18 @@ app.addEventListener('click', (e) => {
   }
 });
 
+// Clicking a legend or day-switch button re-renders the whole hero, which
+// removes that button from the DOM. If the button just took focus on the
+// mousedown (the browser default), that focus loss is what makes Safari
+// scroll to the top. Stop mouse clicks from focusing these buttons in the
+// first place, so the re-render can't trigger the jump; keyboard focus
+// (Tab + Enter/Space) is unaffected and still works.
+app.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.legend-item') || e.target.closest('.day-switch-btn')) {
+    e.preventDefault();
+  }
+});
+
 searchInput.addEventListener('input', () => {
   clearTimeout(debounceTimer);
   const q = searchInput.value.trim();
@@ -708,6 +720,13 @@ function render(place, entries, astro) {
   lastEntries = entries;
   lastAstro = astro;
 
+  // Rebuilding the hero removes the currently-focused legend/day-switch
+  // button from the DOM. Some browsers (Safari/WebKit especially) react to
+  // that focus loss by scrolling the page back to the top, which would pull
+  // the user away from the chart they just clicked in. Remember the scroll
+  // position now and restore it once the new DOM is in place.
+  const scrollY = window.scrollY;
+
   const span = activeRange;
 
   const perModel = entries.map(({ model: m, result, error }) => {
@@ -775,6 +794,7 @@ function render(place, entries, astro) {
 
   app.innerHTML = header;
   renderHero(perModel);
+  window.scrollTo(0, scrollY);
 }
 
 const HAZARDS = [
@@ -989,26 +1009,26 @@ function buildLineChart(avail, seriesKey, opts) {
   </svg>`;
 }
 
-// One column per hour, but still every model's own bar — which model is
-// which still isn't the point, so all of them share one neutral color and a
-// low per-bar opacity, overlaid on the same baseline. Same-color transparent
-// layers compositing on top of each other is order-independent: the result
-// only depends on how many bars overlap at a given height, not which model
-// contributed them. So a column where models agree on the amount reads as a
-// short, solidly-saturated bar; a column where they're spread out fades from
-// solid (near the baseline, where most of them overlap) to faint (near the
-// top, where only the highest outlier reaches) — the fade *is* the spread.
-// A confidence dot beneath the axis carries the separate question of how
-// likely the models think rain is at all, on its own color.
-const BAR_LAYER_OPACITY = 0.32;
+// One column per hour, with every model drawn as its own bar in that
+// model's color, fully opaque, overlaid on the same baseline. Solid bars
+// don't blend the way translucent ones do — paint order alone decides what
+// shows through — so within each hour the bars are sorted tallest-first:
+// the shorter (lower) bars paint last and sit in front of the taller ones
+// behind them. That turns the overlap into a stack of crisp color bands,
+// one per model, so each value reads in its true color instead of a muddy
+// blend of its neighbors. (Two models with identical values share a band —
+// the later-drawn one wins — which is why the confidence dot below still
+// reports the model count.) A confidence dot beneath the axis carries the
+// separate question of how likely the models think rain is at all, on its
+// own color.
+const BAR_LAYER_OPACITY = 1;
 // Filtered-mode alternative to the above: once a model filter is active,
 // "which models agree" stops being the question — "what do my chosen
-// models say, against the rest" is. So instead of one neutral color
-// layered by count, each bar goes back to being its own model's color
-// (the --c-* it already owns elsewhere in the UI), non-selected models
-// pushed down to a faint wash and selected ones raised to near-solid, and
-// selected bars are drawn last per hour so they paint over the dimmed ones
-// they overlap rather than being buried under them.
+// models say, against the rest" is. Bars keep their model colors, but
+// non-selected models are pushed down to a faint wash and selected ones
+// raised to near-solid, and selected bars are drawn last per hour so they
+// paint over the dimmed ones they overlap rather than being buried under
+// them.
 const BAR_FILTERED_DIMMED_OPACITY = 0.18;
 const BAR_FILTERED_SELECTED_OPACITY = 0.85;
 const CONFIDENCE_DOT_ROW = 14; // px reserved between the plot and the hour-label row
@@ -1039,8 +1059,8 @@ function buildPrecipChart(avail, width, selected) {
   const times = avail[0].times;
   const hours = [];
   for (let i = 0; i < n; i++) {
-    // Keep each amount tied to its model (id/color), even in unfiltered
-    // mode, so the filtered-mode branch below doesn't need a second pass.
+    // Keep each amount tied to its model (id/color) so both the unfiltered
+    // and filtered branches can draw each bar in its own model's color.
     const amounts = avail.map(m => ({ id: m.id, color: m.color, v: m.precs[i] || 0 })).filter(a => a.v > 0);
     const probs = avail.map(m => m.precipProb[i]).filter(p => p !== null && p !== undefined);
     const avgProb = probs.length ? probs.reduce((a, b) => a + b, 0) / probs.length : null;
@@ -1080,8 +1100,15 @@ function buildPrecipChart(avail, width, selected) {
 
     if (selected) {
       // Selected models drawn last so they paint on top of the dimmed rest
-      // at the same x — see the comment above BAR_FILTERED_DIMMED_OPACITY.
-      const ordered = [...h.amounts].sort((a, b) => (selected.has(a.id) ? 1 : 0) - (selected.has(b.id) ? 1 : 0));
+      // at the same x; within each group, taller first / shorter last keeps
+      // the "lower bars in front" rule so a short bar is never buried under
+      // a taller one of the same selection state.
+      const ordered = [...h.amounts].sort((a, b) => {
+        const sa = selected.has(a.id) ? 1 : 0;
+        const sb = selected.has(b.id) ? 1 : 0;
+        if (sa !== sb) return sa - sb;
+        return b.v - a.v;
+      });
       ordered.forEach(a => {
         const y = yFor(a.v);
         const barH = plotBottom - y;
@@ -1089,10 +1116,17 @@ function buildPrecipChart(avail, width, selected) {
         bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${isSel ? BAR_FILTERED_SELECTED_OPACITY : BAR_FILTERED_DIMMED_OPACITY}"/>`);
       });
     } else {
-      h.amounts.forEach(a => {
+      // Tallest first, shortest last — SVG paints later elements on top, so
+      // the shorter (lower) bar at this hour ends up in front of the taller
+      // ones behind it. With solid model-colored bars, this order is what
+      // turns the overlap into clean color bands: each model's bar stays
+      // visible from the baseline up to its own height instead of being
+      // painted over by a taller neighbor.
+      const ordered = [...h.amounts].sort((a, b) => b.v - a.v);
+      ordered.forEach(a => {
         const y = yFor(a.v);
         const barH = plotBottom - y;
-        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="var(--c-precip)" opacity="${BAR_LAYER_OPACITY}"/>`);
+        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${BAR_LAYER_OPACITY}"/>`);
       });
     }
     if (h.amounts.length) {
