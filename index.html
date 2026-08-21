@@ -187,6 +187,10 @@
     margin:0 0 20px;background:var(--bg-card);border:1px solid var(--grid-line);
     border-radius:6px;padding:14px 12px 4px;
   }
+  /* Desktop affordance for tap-to-filter: the temp line nearest the
+     cursor (within the same 12px tolerance a tap uses) thickens via a
+     class toggle from mousemove — no state, no re-render. */
+  #tempChartHolder path.temp-line-hover{stroke-width:4.5;}
   .chart-caption{font-size:10px;color:var(--ink-dim);margin-top:6px;}
   .spread-block{border-bottom:1px solid var(--grid-line);padding-bottom:8px;margin-bottom:12px;}
   .sub-head{
@@ -217,6 +221,14 @@
   .strip-line{position:absolute;left:0;right:0;top:52px;height:2px;background:var(--ink-faint);border-radius:1px;}
   .strip-tick{position:absolute;top:48px;width:1px;height:10px;background:var(--ink-faint);transform:translateX(-50%);}
   .strip-dot{position:absolute;top:45px;width:15px;height:15px;border-radius:50%;border:2px solid var(--bg-panel);transform:translateX(-50%);}
+  /* Strip dots are buttons driving the same model filter as the legend:
+     strip the native button chrome (appearance/padding) so they paint
+     exactly like the divs they replaced, and grow the touch target with an
+     invisible ::after halo (~35px) — .strip-dot is already
+     position:absolute, so the halo centers on the painted 15px dot. */
+  .strip-dot{cursor:pointer;appearance:none;-webkit-appearance:none;padding:0;}
+  .strip-dot::after{content:'';position:absolute;inset:-10px;border-radius:50%;}
+  .strip-dot:focus-visible{outline:2px solid var(--c-ecmwf);outline-offset:2px;}
   .strip-val{position:absolute;top:0;font-size:11px;font-weight:600;transform:translateX(-50%);white-space:nowrap;}
   .strip-axis{position:absolute;top:62px;font-size:10px;color:var(--ink);transform:translateX(-50%);}
 
@@ -253,20 +265,6 @@
     .hero-top{flex-direction:column;align-items:flex-start;gap:12px;}
     .hero-right{text-align:left;width:100%;}
     .hero-astro{white-space:normal;}
-    .legend{
-      position:sticky;top:8px;z-index:20;
-      /* Wrap instead of scroll: pills flow into as many compact rows as
-         needed, so the bar always fits the viewport width — one row where
-         it genuinely fits, two on most phones — and never scrolls. */
-      flex-wrap:wrap;justify-content:center;gap:5px;
-      background:var(--bg-panel);
-      border:1px solid var(--grid-line);
-      border-radius:10px;
-      padding:6px 8px;margin:0 0 14px;
-      box-shadow:0 4px 14px rgba(0,0,0,.35);
-    }
-    /* Slightly tighter pills so the wrapped rows stay compact. */
-    .legend-item{padding:4px 9px 4px 7px;}
   }
 </style>
 </head>
@@ -487,6 +485,83 @@ rememberCheckbox.addEventListener('change', () => {
   }
 });
 
+// --- tap-to-filter geometry (temperature chart) ------------------------
+// The helpers between the [tap-geometry] markers are pure — no DOM — so
+// they can be lifted out and exercised by a standalone test; nearestTempLine
+// below is the thin DOM glue that feeds them real click coordinates.
+// [tap-geometry begin]
+const TEMP_TAP_TOLERANCE_PX = 12;
+
+// Parse a polyline path's `d` attribute ("M123.4,56.7 L124.0,58.2 …") into
+// [x,y] pairs. buildLineChart only ever emits M/L commands, so scooping up
+// the coordinate pairs is exact, not a heuristic.
+function parsePathPairs(d) {
+  const pts = [];
+  const re = /(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/g;
+  let m;
+  while ((m = re.exec(d))) pts.push([parseFloat(m[1]), parseFloat(m[2])]);
+  return pts;
+}
+
+// Distance from point (px,py) to segment (ax,ay)–(bx,by), with the
+// projection clamped onto the segment so the endpoints count too.
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+function distToPolyline(px, py, pts) {
+  if (!pts.length) return Infinity;
+  if (pts.length === 1) return Math.hypot(px - pts[0][0], py - pts[0][1]);
+  let best = Infinity;
+  for (let i = 1; i < pts.length; i++) {
+    const d = distToSegment(px, py, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]);
+    if (d < best) best = d;
+  }
+  return best;
+}
+
+// candidates: [{model, pts}] → the one nearest the click, with its
+// chart-space distance.
+function pickNearestPolyline(x, y, candidates) {
+  let best = null;
+  for (const c of candidates) {
+    const d = distToPolyline(x, y, c.pts);
+    if (!best || d < best.dist) best = { model: c.model, dist: d };
+  }
+  return best;
+}
+// [tap-geometry end]
+
+// Map a client-space click into the temp chart's viewBox coordinates and
+// pick the nearest model line. Distance comes back in chart units, so the
+// caller converts to screen px before comparing against the tolerance —
+// 12px should mean the same thing on a phone as on a desktop monitor.
+function nearestTempLine(svg, clientX, clientY) {
+  const rect = svg.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const vb = svg.viewBox.baseVal;
+  if (!vb || !vb.width || !vb.height) return null;
+  const scale = vb.width / rect.width;
+  const x = (clientX - rect.left) * scale;
+  const y = (clientY - rect.top) * (vb.height / rect.height);
+  const candidates = [];
+  const byModel = {};
+  svg.querySelectorAll('path[data-role="temp-line"]').forEach(p => {
+    const pts = parsePathPairs(p.getAttribute('d') || '');
+    if (pts.length) {
+      candidates.push({ model: p.dataset.model, pts });
+      byModel[p.dataset.model] = p;
+    }
+  });
+  const best = pickNearestPolyline(x, y, candidates);
+  if (!best || !best.model) return null;
+  return { model: best.model, path: byModel[best.model], chartDist: best.dist, screenDist: best.dist / scale };
+}
+
 // Delegated on #app (not the buttons themselves) since render() rebuilds
 // the whole hero — including these buttons — on every place load, tab
 // switch, and model-filter click alike.
@@ -524,19 +599,73 @@ app.addEventListener('click', (e) => {
     const id = legendBtn.dataset.model;
     if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
     render(lastPlace, lastEntries, lastAstro);
+    return; // must not fall through — the branches below would re-toggle it
+  }
+
+  // Temperature chart: the six lines cross and overlap constantly, so
+  // native hit-testing would hand every click to whichever line was
+  // painted last, leaving the lines underneath untappable wherever they
+  // cross — and fat hit-strokes (pointer-events:stroke + stroke-width)
+  // have exactly the same paint-order problem, just fatter. Instead,
+  // resolve the click to viewBox coordinates and pick the geometrically
+  // nearest line within a small screen-space tolerance, so every line
+  // stays equally tappable no matter where it crosses another.
+  const tempSvg = e.target.closest('#tempChartHolder svg');
+  if (tempSvg) {
+    const hit = nearestTempLine(tempSvg, e.clientX, e.clientY);
+    if (hit && hit.screenDist < TEMP_TAP_TOLERANCE_PX) {
+      const id = hit.model;
+      if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
+      render(lastPlace, lastEntries, lastAstro);
+    }
+    return; // clicks inside the temp chart never fall through, even on empty plot
+  }
+
+  // Any other tappable chart element carrying a model id — precip bars and
+  // total-strip dots — drives the same toggle the legend does; no new
+  // semantics, no new state.
+  const tapEl = e.target.closest('[data-model]');
+  if (tapEl && tapEl.dataset.model && !tapEl.disabled) {
+    const id = tapEl.dataset.model;
+    if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
+    render(lastPlace, lastEntries, lastAstro);
+    return;
   }
 });
 
-// Clicking a legend or day-switch button re-renders the whole hero, which
-// removes that button from the DOM. If the button just took focus on the
-// mousedown (the browser default), that focus loss is what makes Safari
-// scroll to the top. Stop mouse clicks from focusing these buttons in the
-// first place, so the re-render can't trigger the jump; keyboard focus
-// (Tab + Enter/Space) is unaffected and still works.
+// Clicking a legend or day-switch button — or a strip dot — re-renders the
+// whole hero, which removes that button from the DOM. If the button just
+// took focus on the mousedown (the browser default), that focus loss is
+// what makes Safari scroll to the top. Stop mouse clicks from focusing
+// these buttons in the first place, so the re-render can't trigger the
+// jump; keyboard focus (Tab + Enter/Space) is unaffected and still works.
 app.addEventListener('mousedown', (e) => {
-  if (e.target.closest('.legend-item') || e.target.closest('.day-switch-btn')) {
+  if (e.target.closest('.legend-item') || e.target.closest('.day-switch-btn') || e.target.closest('.strip-dot')) {
     e.preventDefault();
   }
+});
+
+// Desktop-only affordance for tap-to-filter: over the temperature chart,
+// thicken the line nearest the cursor (same 12px tolerance a tap uses) so
+// the interaction reads before the first click. Pure class toggle — no
+// state, no re-render — and moving off the chart (or leaving #app)
+// clears it so the highlight can't linger.
+app.addEventListener('mousemove', (e) => {
+  const holder = $('#tempChartHolder');
+  if (!holder) return;
+  const svg = e.target.closest ? e.target.closest('#tempChartHolder svg') : null;
+  if (!svg) {
+    holder.querySelectorAll('path.temp-line-hover').forEach(p => p.classList.remove('temp-line-hover'));
+    return;
+  }
+  const hit = nearestTempLine(svg, e.clientX, e.clientY);
+  const hot = hit && hit.screenDist < TEMP_TAP_TOLERANCE_PX ? hit.path : null;
+  holder.querySelectorAll('path.temp-line-hover').forEach(p => { if (p !== hot) p.classList.remove('temp-line-hover'); });
+  if (hot && !hot.classList.contains('temp-line-hover')) hot.classList.add('temp-line-hover');
+});
+app.addEventListener('mouseleave', () => {
+  const p = document.querySelector('#tempChartHolder path.temp-line-hover');
+  if (p) p.classList.remove('temp-line-hover');
 });
 
 searchInput.addEventListener('input', () => {
@@ -891,7 +1020,7 @@ function renderHero(perModel) {
     const dotExtra = dimmed ? 'opacity:.5;' : (boosted ? 'width:18px;height:18px;top:43.5px;z-index:2;' : '');
     const valColor = dimmed ? 'var(--ink-faint)' : m.color;
     const valExtra = dimmed ? 'opacity:.55;' : (boosted ? 'font-weight:700;z-index:2;' : '');
-    return `<div class="strip-dot" style="left:${pct}%; background:${dotColor}; ${dotExtra}" title="${m.name}: ${m.totalPrecip.toFixed(1)}mm"></div>
+    return `<button type="button" class="strip-dot" data-model="${m.id}" data-role="strip-dot" aria-pressed="${selectedModels.has(m.id)}" aria-label="Filter to ${escapeHtml(m.name)}" style="left:${pct}%; background:${dotColor}; ${dotExtra}" title="${m.name}: ${m.totalPrecip.toFixed(1)}mm"></button>
       <div class="strip-val" style="left:${pct}%; top:${(i % 3) * 14}px; color:${valColor}; ${valExtra}">${m.totalPrecip.toFixed(1)}mm</div>`;
   }).join('');
 
@@ -927,9 +1056,9 @@ function renderHero(perModel) {
     <div class="legend">
       ${legendItems}
     </div>
-    ${sectionHead('Temperature', 'Hourly temperature from each model over the selected time range. Where the lines diverge, the models disagree on how warm or cold it will get.')}
+    ${sectionHead('Temperature', 'Hourly temperature from each model over the selected time range. Where the lines diverge, the models disagree on how warm or cold it will get. Tap a line to filter to that model — tap again to remove it.')}
     <div class="temp-chart-wrap" id="tempChartHolder"></div>
-    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount (or, with a model filter active, bars are colored per model instead), the dot under each bar shows the average chance of rain that hour, and a ⚡ above an hour means at least one model forecasts thunderstorms then (bolder the more models agree).')}
+    ${sectionHead('Precipitation', 'Top: total rainfall/snow each model expects over the whole view, one dot per model. Bottom: hourly forecast — darker bars mean more models agree on that amount (or, with a model filter active, bars are colored per model instead), the dot under each bar shows the average chance of rain that hour, and a ⚡ above an hour means at least one model forecasts thunderstorms then (bolder the more models agree). Tap a bar, or a dot on the total-spread line, to filter to that model.')}
     <div class="temp-chart-wrap">
       <div class="spread-block">
         <div class="sub-head">Total</div>
@@ -1010,10 +1139,10 @@ function buildLineChart(avail, seriesKey, opts) {
     const isSel = !selected || selected.has(m.id);
     const opacity = selected ? (isSel ? 1 : 0.25) : 0.9;
     const strokeWidth = selected ? (isSel ? 2.5 : 1.5) : 2;
-    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="${strokeWidth}" opacity="${opacity}"/>`;
+    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="${strokeWidth}" opacity="${opacity}" data-model="${m.id}" data-role="temp-line"/>`;
   }).join('');
 
-  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
     ${axis.vLines}
     ${gridLines.join('')}
     ${lines}
@@ -1112,6 +1241,18 @@ function buildPrecipChart(avail, width, selected) {
     const x = xFor(i);
     const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
 
+    // Aggregate tooltip text for this hour, computed up front because every
+    // visible bar in the hour now carries its own copy of it (see below) —
+    // the transparent overlay rect alone can no longer be the tooltip
+    // carrier now that it must let clicks through to the bars.
+    let hourTitle = '';
+    if (h.amounts.length) {
+      const vals = h.amounts.map(a => a.v);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      const range = min === max ? `${min.toFixed(1)}mm` : `${min.toFixed(1)}–${max.toFixed(1)}mm`;
+      hourTitle = `${hourLabel}: ${range} · ${h.amounts.length} of ${h.total} models predict rain`;
+    }
+
     if (selected) {
       // Selected models drawn last so they paint on top of the dimmed rest
       // at the same x; within each group, taller first / shorter last keeps
@@ -1127,7 +1268,7 @@ function buildPrecipChart(avail, width, selected) {
         const y = yFor(a.v);
         const barH = plotBottom - y;
         const isSel = selected.has(a.id);
-        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${isSel ? BAR_FILTERED_SELECTED_OPACITY : BAR_FILTERED_DIMMED_OPACITY}"/>`);
+        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${isSel ? BAR_FILTERED_SELECTED_OPACITY : BAR_FILTERED_DIMMED_OPACITY}" data-model="${a.id}" data-role="precip-bar"><title>${hourTitle}</title></rect>`);
       });
     } else {
       // Tallest first, shortest last — SVG paints later elements on top, so
@@ -1140,16 +1281,16 @@ function buildPrecipChart(avail, width, selected) {
       ordered.forEach(a => {
         const y = yFor(a.v);
         const barH = plotBottom - y;
-        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${BAR_LAYER_OPACITY}"/>`);
+        bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" rx="1.5" fill="${a.color}" opacity="${BAR_LAYER_OPACITY}" data-model="${a.id}" data-role="precip-bar"><title>${hourTitle}</title></rect>`);
       });
     }
-    if (h.amounts.length) {
-      const vals = h.amounts.map(a => a.v);
-      const min = Math.min(...vals), max = Math.max(...vals);
-      const range = min === max ? `${min.toFixed(1)}mm` : `${min.toFixed(1)}–${max.toFixed(1)}mm`;
-      const title = `${hourLabel}: ${range} · ${h.amounts.length} of ${h.total} models predict rain`;
+    if (hourTitle) {
+      // This transparent overlay used to be the sole tooltip hit-rect; the
+      // visible bars are tappable now (and carry the same <title> for
+      // desktop hover), so it must not swallow their clicks.
+      const max = Math.max(...h.amounts.map(a => a.v));
       const hitY = yFor(max);
-      bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${hitY.toFixed(1)}" width="${barW.toFixed(1)}" height="${(plotBottom - hitY).toFixed(1)}" fill="transparent"><title>${title}</title></rect>`);
+      bars.push(`<rect x="${(x - barW / 2).toFixed(1)}" y="${hitY.toFixed(1)}" width="${barW.toFixed(1)}" height="${(plotBottom - hitY).toFixed(1)}" fill="transparent" pointer-events="none"><title>${hourTitle}</title></rect>`);
     }
 
     if (h.avgProb !== null) {
@@ -1168,7 +1309,7 @@ function buildPrecipChart(avail, width, selected) {
     }
   });
 
-  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;">
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
     ${axis.vLines}
     ${gridLines.join('')}
     ${bars.join('')}
