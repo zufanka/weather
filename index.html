@@ -253,6 +253,20 @@
     .hero-top{flex-direction:column;align-items:flex-start;gap:12px;}
     .hero-right{text-align:left;width:100%;}
     .hero-astro{white-space:normal;}
+    .legend{
+      position:sticky;top:8px;z-index:20;
+      /* Wrap instead of scroll: pills flow into as many compact rows as
+         needed, so the bar always fits the viewport width — one row where
+         it genuinely fits, two on most phones — and never scrolls. */
+      flex-wrap:wrap;justify-content:center;gap:5px;
+      background:var(--bg-panel);
+      border:1px solid var(--grid-line);
+      border-radius:10px;
+      padding:6px 8px;margin:0 0 14px;
+      box-shadow:0 4px 14px rgba(0,0,0,.35);
+    }
+    /* Slightly tighter pills so the wrapped rows stay compact. */
+    .legend-item{padding:4px 9px 4px 7px;}
   }
 </style>
 </head>
