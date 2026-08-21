@@ -6,6 +6,7 @@
 <title>rainfrog — multi-model weather</title>
 <meta name="description" content="Six national weather models, compared.">
 <meta name="theme-color" content="#0e141b">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%90%B8%3C/text%3E%3C/svg%3E">
 <link rel="canonical" href="https://weather.homolova.sk/">
 <script defer src="https://cloud.umami.is/script.js" data-website-id="e926cc39-ba91-4db2-a2f2-57cf2289b43a" data-auto-pageview="false"></script>
@@ -34,6 +35,11 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
+    /* The page is a dark design by intent — declare it so the browser
+       renders UA chrome (scrollbars, form controls) dark in BOTH system
+       color modes, and so Chrome-on-Android's algorithmic "auto dark"
+       leaves this hand-tuned palette alone instead of re-darkening it. */
+    color-scheme:dark;
     --bg: #0e141b;
     --bg-panel: #131b24;
     --bg-card: #161f29;
