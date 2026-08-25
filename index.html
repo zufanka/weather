@@ -443,8 +443,21 @@ let lastAstro = null;
 // Model ids the user has clicked on in the legend, surviving re-renders the
 // same way activeRange does (render() rebuilds the DOM from scratch, so the
 // state has to live outside it). Empty = no filter, show everything at full
-// strength — filtering is opt-in.
+// strength — filtering is opt-in. Selection is single-select: the Set
+// never holds more than one id — clicking a model replaces any previous
+// selection, clicking the selected model clears it (back to "show all").
 let selectedModels = new Set();
+
+// Single-select toggle shared by every click path (legend, temp-chart
+// hit-test, generic [data-model] taps) so they can't drift apart.
+function toggleModelSelection(id) {
+  if (selectedModels.has(id)) {
+    selectedModels.delete(id);
+  } else {
+    selectedModels.clear();
+    selectedModels.add(id);
+  }
+}
 
 // The chosen ids aren't necessarily present at the currently-searched place
 // (a model can be selected, then the user searches somewhere it doesn't
@@ -603,7 +616,7 @@ app.addEventListener('click', (e) => {
   const legendBtn = e.target.closest('.legend-item');
   if (legendBtn && !legendBtn.disabled) {
     const id = legendBtn.dataset.model;
-    if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
+    toggleModelSelection(id);
     render(lastPlace, lastEntries, lastAstro);
     return; // must not fall through — the branches below would re-toggle it
   }
@@ -621,7 +634,7 @@ app.addEventListener('click', (e) => {
     const hit = nearestTempLine(tempSvg, e.clientX, e.clientY);
     if (hit && hit.screenDist < TEMP_TAP_TOLERANCE_PX) {
       const id = hit.model;
-      if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
+      toggleModelSelection(id);
       render(lastPlace, lastEntries, lastAstro);
     }
     return; // clicks inside the temp chart never fall through, even on empty plot
@@ -633,7 +646,7 @@ app.addEventListener('click', (e) => {
   const tapEl = e.target.closest('[data-model]');
   if (tapEl && tapEl.dataset.model && !tapEl.disabled) {
     const id = tapEl.dataset.model;
-    if (selectedModels.has(id)) selectedModels.delete(id); else selectedModels.add(id);
+    toggleModelSelection(id);
     render(lastPlace, lastEntries, lastAstro);
     return;
   }
