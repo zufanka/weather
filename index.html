@@ -158,6 +158,9 @@
   .hero-right{text-align:right;}
   .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--ink);}
   .hero-now-range{font-size:11px;color:var(--ink-dim);margin-top:2px;}
+.hero-now-hl{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;}
+.hero-now-hl .hl-tag{color:var(--ink-dim);font-weight:500;font-size:11px;}
+.hero-now-main{display:flex;align-items:baseline;gap:7px;}
   .hero-astro{font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap;}
   .chart-title{
     font-family:'Space Grotesk',sans-serif;
@@ -915,6 +918,18 @@ function render(place, entries, astro) {
     const timesSpan = times.slice(nowIdx, nowIdx + span);
     const validT = t.filter(v => v !== null && v !== undefined);
 
+    // Today's local calendar day, for the hero's high/low. The sliced span
+    // below starts at "now", so it would miss earlier-today hours — use the
+    // full series and keep whatever hours of today it covers (partial days
+    // are fine, per design).
+    const nowLocal = new Date(Date.now() + offset * 1000);
+    const todayStr = `${nowLocal.getUTCFullYear()}-${String(nowLocal.getUTCMonth() + 1).padStart(2, '0')}-${String(nowLocal.getUTCDate()).padStart(2, '0')}`;
+    const todayTemps = times
+      .map((ts, i) => ts.startsWith(todayStr) ? temps[i] : null)
+      .filter(v => v !== null && v !== undefined);
+    const todayLow = todayTemps.length ? Math.min(...todayTemps) : null;
+    const todayHigh = todayTemps.length ? Math.max(...todayTemps) : null;
+
     const hourFlags = p.map((v, i) => classifyHour(c[i], v, g[i]));
     const flags = {
       thunder: hourFlags.some(f => f.thunder),
@@ -930,6 +945,7 @@ function render(place, entries, astro) {
       available: validT.length > 0,
       temps: t, precs: p, precipProb: pp, codes: c, winds: w, gusts: g, times: timesSpan, hourFlags,
       nowVal: t[0],
+      todayLow, todayHigh,
       totalPrecip: p.reduce((a, b) => a + b, 0),
       avgWind: w.reduce((a, b) => a + b, 0) / w.length,
       maxGust: Math.max(0, ...g),
@@ -986,7 +1002,13 @@ function renderHero(perModel) {
     const rangeLabel = nowMax - nowMin >= 1
       ? `${Math.round(nowMin)}–${Math.round(nowMax)}°`
       : '';
-    nowBox.innerHTML = `<div class="hero-now-val">${Math.round(nowAvg)}°</div><div class="hero-now-range">${rangeLabel}</div>`;
+    // Today's low/high, averaged across models the same way nowAvg is.
+    const lows = avail.map(m => m.todayLow).filter(v => v !== null && v !== undefined);
+    const highs = avail.map(m => m.todayHigh).filter(v => v !== null && v !== undefined);
+    const hlLabel = (lows.length && highs.length)
+      ? `<span class="hl-tag">H</span> ${Math.round(highs.reduce((a, b) => a + b, 0) / highs.length)}° <span class="hl-tag">L</span> ${Math.round(lows.reduce((a, b) => a + b, 0) / lows.length)}°`
+      : '';
+    nowBox.innerHTML = `<div class="hero-now-main"><div class="hero-now-val">${Math.round(nowAvg)}°</div><div class="hero-now-hl">${hlLabel}</div></div><div class="hero-now-range">${rangeLabel}</div>`;
   } else {
     nowBox.innerHTML = '';
   }
