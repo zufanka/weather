@@ -9,6 +9,7 @@ Single static HTML file, no build step, no backend, no API keys. `social-preview
 - Search any place (Open-Meteo geocoding)
 - Temperature, next 24h — one line per model
 - Precipitation probability, next 24h — heatmap, one row per model
+- Sunshine per hour — single-row heatmap aligned to the same hours, brighter yellow = more sun (model average)
 - Rainfall/snow total spread across models
 - Thunderstorm / heavy rain / heavy snow / freezing rain / strong & severe wind warnings, flagged per model
 - Sunrise, sunset, and moon phase for the day

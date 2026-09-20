@@ -50,6 +50,7 @@
     --accent: #d7cdb0;
     --c-precip: #6ea3d1;
     --c-confidence: #d68fae;
+    --c-sun: #ffd54a;
     --c-icon: #d65d4a;
     --c-ecmwf: #4f8fdb;
     --c-gfs: #4fb37a;
@@ -763,7 +764,7 @@ function sectionHead(title, info) {
 async function fetchModel(place, model) {
   // forecast_days=4 guarantees a full 72h window is available no matter what
   // hour "now" falls on within day 0 (worst case: now = day 0, hour 23).
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m&models=${model.id}&forecast_days=4&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,sunshine_duration&models=${model.id}&forecast_days=4&timezone=auto`;
   const res = await fetch(url);
   const body = await res.json().catch(() => null);
   if (!res.ok || !body || body.error) {
@@ -912,6 +913,10 @@ function render(place, entries, astro) {
     const t = temps.slice(nowIdx, nowIdx + span);
     const p = (precs || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
     const pp = (precipProbs || t.map(() => null)).slice(nowIdx, nowIdx + span);
+    // Seconds of direct sunshine (WMO 120 W/m² threshold) in each hour;
+    // null-safe fallback keeps the sun strip renderable even if a model
+    // ever stops returning the variable.
+    const suns = (extractSeries(hourly, m.id, 'sunshine_duration') || t.map(() => null)).slice(nowIdx, nowIdx + span);
     const c = (codes || t.map(() => 0)).slice(nowIdx, nowIdx + span);
     const w = (winds || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
     const g = (gusts || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
@@ -943,7 +948,7 @@ function render(place, entries, astro) {
     return {
       ...m,
       available: validT.length > 0,
-      temps: t, precs: p, precipProb: pp, codes: c, winds: w, gusts: g, times: timesSpan, hourFlags,
+      temps: t, precs: p, precipProb: pp, sun: suns, codes: c, winds: w, gusts: g, times: timesSpan, hourFlags,
       nowVal: t[0],
       todayLow, todayHigh,
       totalPrecip: p.reduce((a, b) => a + b, 0),
@@ -1115,6 +1120,8 @@ function renderHero(perModel) {
       <div class="sub-head">Hourly</div>
       <div id="precipChartHolder"></div>
     </div>
+    ${sectionHead('Sunshine', 'One square per hour, aligned with the charts above — the brighter the yellow, the more minutes of direct sunshine the models expect that hour (averaged across the models shown). Faint gray squares are hours with no sun expected at all; hover or tap a square for each model\'s own estimate.')}
+    <div class="temp-chart-wrap"><div id="sunChartHolder"></div></div>
   `;
 
   lastAvailModels = avail;
@@ -1125,11 +1132,13 @@ function renderResponsiveCharts() {
   const avail = lastAvailModels;
   const tempHolder = $('#tempChartHolder');
   const precipHolder = $('#precipChartHolder');
-  if (!avail || !tempHolder || !precipHolder) return;
+  const sunHolder = $('#sunChartHolder');
+  if (!avail || !tempHolder || !precipHolder || !sunHolder) return;
   const width = Math.max(260, Math.round(tempHolder.getBoundingClientRect().width));
   const selected = effectiveSelection(avail);
   tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width, selected });
   precipHolder.innerHTML = buildPrecipChart(avail, width, selected);
+  sunHolder.innerHTML = buildSunChart(avail, width, selected);
 }
 
 function buildLineChart(avail, seriesKey, opts) {
@@ -1361,6 +1370,77 @@ function buildPrecipChart(avail, width, selected) {
     ${axis.hourLabels}
     ${axis.dayLabels}
   </svg>`;
+}
+
+// A single-row sunshine heatmap: one square per hour on the same hour
+// columns the temperature and precipitation charts use (same pads, same
+// chartXFor), so all three line up exactly. Each square is the average
+// fraction of direct sunshine in that hour across the models shown —
+// `sunshine_duration` counts the seconds of the preceding hour during
+// which direct irradiance exceeded the WMO 120 W/m² threshold, so
+// dividing by 3600 gives a clean 0–1 "how sunny is this hour". That
+// fraction drives the yellow's opacity (the same opacity-scale trick as
+// the precipitation confidence dots); zero-sun hours (night or solid
+// overcast) fall back to a faint neutral square so the strip stays
+// continuous and reads "hour exists, no sun", while an hour no model
+// reported on at all is left as a genuine gap. With a model filter active
+// the average is taken over the selected models only, matching the way
+// the hazard chips recompute.
+const SUN_CELL_ROW = 20; // px height of the strip
+function buildSunChart(avail, width, selected) {
+  const n = avail[0].times.length;
+  const isMultiDay = n > 24;
+  const base = selected ? avail.filter(m => selected.has(m.id)) : avail;
+  const W = width || 1000;
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16;
+  const PAD_B = isMultiDay ? 40 : 26; // same label band as buildLineChart
+  const plotW = W - PAD_L - PAD_R;
+  const rowH = SUN_CELL_ROW;
+  const H = PAD_T + rowH + PAD_B;
+  const colW = plotW / n;
+  // Same column-gap logic as the precipitation bars, so the squares never
+  // bleed into a neighbouring hour on a narrow 72h phone screen.
+  const cellW = Math.max(1, colW - Math.min(4, colW * 0.25));
+  const xFor = chartXFor(PAD_L, plotW, n);
+  const times = avail[0].times;
+  const axis = buildXAxis(times, n, plotW, rowH, PAD_L, PAD_T);
+
+  const cells = [];
+  let totalSecs = 0, cellsWithData = 0;
+  for (let i = 0; i < n; i++) {
+    const reporting = base
+      .map(m => ({ name: m.name, v: m.sun ? m.sun[i] : null }))
+      .filter(d => d.v !== null && d.v !== undefined);
+    if (!reporting.length) continue; // no model reported this hour → gap
+    const meanSecs = reporting.reduce((a, d) => a + d.v, 0) / reporting.length;
+    totalSecs += meanSecs;
+    cellsWithData++;
+    const frac = Math.max(0, Math.min(1, meanSecs / 3600));
+    const mins = Math.round(meanSecs / 60);
+    const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
+    const breakdown = reporting.map(d => `${d.name} ${Math.round(d.v / 60)} min`).join(' · ');
+    const title = `${hourLabel}: ${mins ? `≈${mins} min sunshine` : 'no sunshine forecast'} (avg of ${reporting.length} model${reporting.length === 1 ? '' : 's'}) — ${breakdown}`;
+    const attrs = `x="${(xFor(i) - cellW / 2).toFixed(1)}" y="${PAD_T}" width="${cellW.toFixed(1)}" height="${rowH}" rx="2"`;
+    if (frac > 0) {
+      // Floor mirrors the confidence dots' scale; a full hour of sun is solid.
+      const opacity = 0.15 + 0.85 * frac;
+      cells.push(`<rect ${attrs} fill="var(--c-sun)" opacity="${opacity.toFixed(2)}"><title>${title}</title></rect>`);
+    } else {
+      cells.push(`<rect ${attrs} fill="var(--grid-line)" opacity="0.35"><title>${title}</title></rect>`);
+    }
+  }
+
+  const caption = cellsWithData
+    ? `<div class="chart-caption">≈ ${(totalSecs / 3600).toFixed(1)} h of sunshine over the next ${n} hours · ${base.length === 1 ? base[0].name : `average of ${base.length} models`}</div>`
+    : '';
+
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
+    ${axis.vLines}
+    ${cells.join('')}
+    ${axis.dayLines}
+    ${axis.hourLabels}
+    ${axis.dayLabels}
+  </svg>${caption}`;
 }
 
 // load a remembered place if one was saved, otherwise default to Vienna, Austria
