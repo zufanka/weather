@@ -13,6 +13,7 @@ Single static HTML file, no build step, no backend, no API keys. `social-preview
 - Rainfall/snow total spread across models
 - Thunderstorm / heavy rain / heavy snow / freezing rain / strong & severe wind warnings, flagged per model
 - Sunrise, sunset, and moon phase for the day
+- Air quality strip — European AQI (banded colors), UV index, and atmospheric haze, one cell per hour
 - "Remember this location" — saves your last place in `localStorage`
 
 ## Running it
@@ -25,4 +26,4 @@ Works as-is on GitHub Pages or any static host — push the repo and enable Page
 
 ## Data
 
-Weather and geocoding data: [Open-Meteo.com](https://open-meteo.com), CC BY 4.0. Model availability, resolution, and forecast range vary — see the per-model cards for details.
+Weather, geocoding, and air quality data: [Open-Meteo.com](https://open-meteo.com), CC BY 4.0. Air quality (European AQI, UV index, aerosol optical depth) is based on the [Copernicus Atmosphere Monitoring Service (CAMS)](https://atmosphere.copernicus.eu) — see the [CAMS attribution requirements](https://confluence.ecmwf.int/display/CKB/CAMS+Regional%3A+European+air+quality+analysis+and+forecast+data+documentation). Model availability, resolution, and forecast range vary — see the per-model cards for details.

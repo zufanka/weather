@@ -185,8 +185,14 @@
   .info-icon:hover,.info-icon:focus-visible{border-color:var(--c-ecmwf);color:var(--ink);outline:none;}
   .info-icon .info-tooltip{
     display:none;position:absolute;z-index:30;
-    top:calc(100% + 8px);left:50%;transform:translateX(-50%);
-    width:min(260px,72vw);
+    top:calc(100% + 8px);
+    /* Every (i) icon sits at the left edge of a section title, so the
+       tooltip is left-anchored to it everywhere — desktop and mobile —
+       rather than centered. Centering would push it past the left screen
+       edge on narrow viewports; anchoring left with a viewport-clamped
+       width can never bleed on either. */
+    left:-4px;
+    width:min(260px,calc(100vw - 48px));
     background:var(--bg-card);border:1px solid var(--grid-line);border-radius:6px;
     padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.4);
     font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:400;
@@ -202,6 +208,11 @@
      class toggle from mousemove — no state, no re-render. */
   #tempChartHolder path.temp-line-hover{stroke-width:4.5;}
   .chart-caption{font-size:10px;color:var(--ink-dim);margin-top:6px;}
+  .aq-legend{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--grid-line);padding-top:8px;}
+  .aq-legend-row{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;}
+  .aq-legend-item{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--ink-dim);font-family:'IBM Plex Mono',monospace;}
+  .aq-legend-sw{display:inline-block;width:14px;height:9px;border-radius:2px;}
+  .aq-legend-lead{font-size:9px;color:var(--ink-dim);font-family:'IBM Plex Mono',monospace;opacity:.7;margin-right:2px;}
   .spread-block{border-bottom:1px solid var(--grid-line);padding-bottom:8px;margin-bottom:12px;}
   .sub-head{
     font-family:'Space Grotesk',sans-serif;font-weight:700;
@@ -443,6 +454,9 @@ let activeRange = 24;
 let lastPlace = null;
 let lastEntries = null;
 let lastAstro = null;
+// Air quality response (CAMS via Open-Meteo) — single source, so unlike
+// the weather models there's nothing to filter; kept here for re-renders.
+let lastAir = null;
 
 // Model ids the user has clicked on in the legend, surviving re-renders the
 // same way activeRange does (render() rebuilds the DOM from scratch, so the
@@ -613,7 +627,7 @@ app.addEventListener('click', (e) => {
     const hours = Number(dayBtn.dataset.hours);
     if (hours === activeRange) return;
     activeRange = hours;
-    render(lastPlace, lastEntries, lastAstro);
+    render(lastPlace, lastEntries, lastAstro, lastAir);
     return;
   }
 
@@ -621,7 +635,7 @@ app.addEventListener('click', (e) => {
   if (legendBtn && !legendBtn.disabled) {
     const id = legendBtn.dataset.model;
     toggleModelSelection(id);
-    render(lastPlace, lastEntries, lastAstro);
+    render(lastPlace, lastEntries, lastAstro, lastAir);
     return; // must not fall through — the branches below would re-toggle it
   }
 
@@ -639,7 +653,7 @@ app.addEventListener('click', (e) => {
     if (hit && hit.screenDist < TEMP_TAP_TOLERANCE_PX) {
       const id = hit.model;
       toggleModelSelection(id);
-      render(lastPlace, lastEntries, lastAstro);
+      render(lastPlace, lastEntries, lastAstro, lastAir);
     }
     return; // clicks inside the temp chart never fall through, even on empty plot
   }
@@ -651,7 +665,7 @@ app.addEventListener('click', (e) => {
   if (tapEl && tapEl.dataset.model && !tapEl.disabled) {
     const id = tapEl.dataset.model;
     toggleModelSelection(id);
-    render(lastPlace, lastEntries, lastAstro);
+    render(lastPlace, lastEntries, lastAstro, lastAir);
     return;
   }
 });
@@ -753,10 +767,10 @@ function escapeHtml(s) {
 
 // A section headline with a click-to-open (i) tooltip explaining what the
 // section shows. Click rather than hover so it's equally usable on a phone.
-function sectionHead(title, info) {
+function sectionHead(title, info, extraHtml) {
   return `<div class="chart-title">${escapeHtml(title)}
     <button type="button" class="info-icon" aria-label="About ${escapeHtml(title)}" aria-haspopup="true" aria-expanded="false">i
-      <span class="info-tooltip" role="tooltip">${escapeHtml(info)}</span>
+      <span class="info-tooltip" role="tooltip">${escapeHtml(info)}${extraHtml || ''}</span>
     </button>
   </div>`;
 }
@@ -782,6 +796,14 @@ async function fetchAstro(place) {
   return body.daily;
 }
 
+async function fetchAirQuality(place) {
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${place.lat}&longitude=${place.lon}&hourly=european_aqi,uv_index,aerosol_optical_depth&forecast_days=4&timezone=auto`;
+  const res = await fetch(url);
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body || body.error || !body.hourly) return null;
+  return body;
+}
+
 async function loadPlace(place) {
   currentPlace = place;
   if (rememberCheckbox.checked) saveRememberedPlace(place);
@@ -789,9 +811,10 @@ async function loadPlace(place) {
   statusBox.textContent = `Fetching model runs for ${place.name}…`;
   app.innerHTML = '';
 
-  const [settled, astro] = await Promise.all([
+  const [settled, astro, air] = await Promise.all([
     Promise.allSettled(MODELS.map(m => fetchModel(place, m))),
     fetchAstro(place).catch(() => null),
+    fetchAirQuality(place).catch(() => null),
   ]);
 
   const ok = settled.filter(s => s.status === 'fulfilled');
@@ -806,7 +829,7 @@ async function loadPlace(place) {
     model: m,
     result: settled[i].status === 'fulfilled' ? settled[i].value : null,
     error: settled[i].status === 'rejected' ? settled[i].reason.message : null,
-  })), astro);
+  })), astro, air);
 
   const failedCount = settled.length - ok.length;
   statusBox.textContent = failedCount ? `${failedCount} of ${MODELS.length} models unavailable for this location.` : '';
@@ -881,10 +904,11 @@ function buildAstroLine(astro) {
   return `<div class="hero-astro">${parts.join(' · ')}</div>`;
 }
 
-function render(place, entries, astro) {
+function render(place, entries, astro, air) {
   lastPlace = place;
   lastEntries = entries;
   lastAstro = astro;
+  lastAir = air;
 
   // Rebuilding the hero removes the currently-focused legend/day-switch
   // button from the DOM. Some browsers (Safari/WebKit especially) react to
@@ -976,7 +1000,7 @@ function render(place, entries, astro) {
   </div>`;
 
   app.innerHTML = header;
-  renderHero(perModel);
+  renderHero(perModel, air);
   window.scrollTo(0, scrollY);
 }
 
@@ -989,7 +1013,7 @@ const HAZARDS = [
   { key: 'strongWind',   label: 'Strong gusts (60+ km/h)', flagKey: 'strongWind' },
 ];
 
-function renderHero(perModel) {
+function renderHero(perModel, air) {
   const box = $('#heroBody');
   const nowBox = $('#heroNow');
   const avail = perModel.filter(m => m.available);
@@ -1122,6 +1146,8 @@ function renderHero(perModel) {
     </div>
     ${sectionHead('Sunshine', 'One square per hour, aligned with the charts above — the brighter the yellow, the more minutes of direct sunshine the models expect that hour (averaged across the models shown). Faint gray squares are hours with no sun expected at all; hover or tap a square for each model\'s own estimate.')}
     <div class="temp-chart-wrap"><div id="sunChartHolder"></div></div>
+    ${air ? sectionHead('Air quality', 'Three strips aligned to the same hours — European AQI, UV index (WHO scale), and atmospheric haze/aerosol optical depth (the darker the square, the hazier). AQI and UV share one severity color ramp, blue (mild) through orange and red to purple (extreme); the legend maps it to both scales. Single CAMS model, so unlike the weather charts it is not affected by the model filter.', buildAirLegend()) : ''}
+    ${air ? '<div class="temp-chart-wrap"><div id="airChartHolder"></div></div>' : ''}
   `;
 
   lastAvailModels = avail;
@@ -1133,12 +1159,16 @@ function renderResponsiveCharts() {
   const tempHolder = $('#tempChartHolder');
   const precipHolder = $('#precipChartHolder');
   const sunHolder = $('#sunChartHolder');
+  const airHolder = $('#airChartHolder');
   if (!avail || !tempHolder || !precipHolder || !sunHolder) return;
   const width = Math.max(260, Math.round(tempHolder.getBoundingClientRect().width));
   const selected = effectiveSelection(avail);
   tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width, selected });
   precipHolder.innerHTML = buildPrecipChart(avail, width, selected);
   sunHolder.innerHTML = buildSunChart(avail, width, selected);
+  if (airHolder && lastAir) {
+    airHolder.innerHTML = buildAirChart(lastAir.hourly, avail[0].times, width);
+  }
 }
 
 function buildLineChart(avail, seriesKey, opts) {
@@ -1441,6 +1471,160 @@ function buildSunChart(avail, width, selected) {
     ${axis.hourLabels}
     ${axis.dayLabels}
   </svg>${caption}`;
+}
+
+// ── Air quality ────────────────────────────────────────────────────────
+// Three single-row heatmaps stacked in one SVG, using the same hour
+// columns as every other chart. Unlike the sunshine strip there is one
+// value per hour from a single source (CAMS), so no model averaging and
+// no reaction to the model filter. Alignment is by timestamp string
+// (both API calls use timezone=auto for the same coordinates, so the
+// strings match); an hour the air API doesn't cover is a genuine gap.
+
+// One shared six-step severity ramp — blue → light blue → orange → red →
+// dark red → purple — used by both the AQI bands and the UV ramp so the
+// two strips (and the consolidated legend) speak the same color language.
+const AQ_RAMP = ['#8fd0f0', '#4fa8e8', '#ffa726', '#ff5050', '#a32020', '#7d2181'];
+
+// European AQI bands: value → ramp color + plain-language label.
+const EAQI_BANDS = [
+  [20, AQ_RAMP[0], 'good'],
+  [40, AQ_RAMP[1], 'fair'],
+  [60, AQ_RAMP[2], 'moderate'],
+  [80, AQ_RAMP[3], 'poor'],
+  [100, AQ_RAMP[4], 'very poor'],
+  [Infinity, AQ_RAMP[5], 'extremely poor'],
+];
+function eaqiInfo(v) {
+  for (const [limit, color, label] of EAQI_BANDS) if (v < limit) return { color, label };
+  return EAQI_BANDS[EAQI_BANDS.length - 1].slice(1);
+}
+
+// UV descriptor on the WHO scale (0-2 low … 11+ extreme).
+function uvInfo(v) {
+  if (v < 3) return 'low';
+  if (v < 6) return 'moderate';
+  if (v < 8) return 'high';
+  if (v < 11) return 'very high';
+  return 'extreme';
+}
+
+// UV color ramp interpolates the shared AQ ramp between WHO reference
+// points 0, 2, 5, 7, 9 and 11 (low → extreme).
+const UV_STOPS = [[0].concat(AQ_RAMP[0]), [2].concat(AQ_RAMP[1]), [5].concat(AQ_RAMP[2]), [7].concat(AQ_RAMP[3]), [9].concat(AQ_RAMP[4]), [11].concat(AQ_RAMP[5])]
+  .map(([x, hex]) => [x, parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)]);
+function uvColor(v) {
+  const x = Math.max(0, Math.min(11, v));
+  for (let s = 0; s < UV_STOPS.length - 1; s++) {
+    const [x0, r0, g0, b0] = UV_STOPS[s];
+    const [x1, r1, g1, b1] = UV_STOPS[s + 1];
+    if (x >= x0 && x <= x1) {
+      const t = x1 === x0 ? 0 : (x - x0) / (x1 - x0);
+      const c = (a, b) => Math.round(a + (b - a) * t);
+      return `rgb(${c(r0, r1)},${c(g0, g1)},${c(b0, b1)})`;
+    }
+  }
+  return AQ_RAMP[5];
+}
+
+// Haze (aerosol optical depth) is dimensionless and roughly 0-1+; clear
+// sky ≈ 0.0-0.1, heavy haze/dust > 0.5. A linear scale would leave most
+// hours nearly invisible, so opacity follows the square root.
+function aodOpacity(v) {
+  return 0.10 + 0.90 * Math.sqrt(Math.max(0, Math.min(1, v)));
+}
+
+const AIR_CELL_ROW = 20; // matches SUN_CELL_ROW so the strips line up
+function buildAirChart(airHourly, times, width) {
+  const n = times.length;
+  const isMultiDay = n > 24;
+  const W = width || 1000;
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16;
+  const PAD_B = isMultiDay ? 40 : 26;
+  const plotW = W - PAD_L - PAD_R;
+  const xFor = chartXFor(PAD_L, plotW, n);
+  const colW = plotW / n;
+  const cellW = Math.max(1, colW - Math.min(4, colW * 0.25));
+
+  // Map the air API's timestamps to its own indices, then read through the
+  // chart's (model) hour columns so everything shares one x-axis.
+  const airIdx = new Map((airHourly.time || []).map((t, i) => [t, i]));
+  const at = key => times.map(t => {
+    const i = airIdx.get(t);
+    if (i === undefined) return null;
+    const v = airHourly[key] ? airHourly[key][i] : null;
+    return (v === null || v === undefined) ? null : v;
+  });
+
+  const rows = [
+    { key: 'european_aqi', label: 'European AQI', series: at('european_aqi') },
+    { key: 'uv_index', label: 'UV index', series: at('uv_index') },
+    { key: 'aerosol_optical_depth', label: 'Haze (aerosol depth)', series: at('aerosol_optical_depth') },
+  ];
+
+  const LABEL_H = 11, GAP = 7;
+  const bandH = LABEL_H + AIR_CELL_ROW + GAP;
+  const rowsH = rows.length * bandH - GAP;
+  const H = PAD_T + rowsH + PAD_B;
+  const axis = buildXAxis(times, n, plotW, rowsH, PAD_L, PAD_T);
+
+  const peaks = {};
+  let svg = axis.vLines;
+  rows.forEach((row, r) => {
+    const rowTop = PAD_T + r * bandH + LABEL_H;
+    svg += `<text x="${PAD_L}" y="${rowTop - 3}" font-size="9" fill="var(--ink-dim)" font-family="IBM Plex Mono">${row.label}</text>`;
+    let peak = null;
+    for (let i = 0; i < n; i++) {
+      const v = row.series[i];
+      if (v === null) continue; // hour the air API doesn't cover → gap
+      if (peak === null || v > peak) peak = v;
+      const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
+      const x = (xFor(i) - cellW / 2).toFixed(1);
+      const attrs = `x="${x}" y="${rowTop}" width="${cellW.toFixed(1)}" height="${AIR_CELL_ROW}" rx="2"`;
+      let cell;
+      if (row.key === 'european_aqi') {
+        const { color, label } = eaqiInfo(v);
+        cell = `<rect ${attrs} fill="${color}"><title>${hourLabel}: AQI ${Math.round(v)} (${label})</title></rect>`;
+      } else if (row.key === 'uv_index') {
+        const info = uvInfo(v);
+        const opacity = (0.20 + 0.80 * Math.max(0, Math.min(1, v / 11))).toFixed(2);
+        cell = `<rect ${attrs} fill="${uvColor(v)}" opacity="${opacity}"><title>${hourLabel}: UV ${v.toFixed(1)} (${info})</title></rect>`;
+      } else {
+        const opacity = aodOpacity(v).toFixed(2);
+        const fill = v < 0.15 ? 'var(--grid-line)' : '#8ea0b8';
+        cell = `<rect ${attrs} fill="${fill}" opacity="${v < 0.15 ? 0.35 : opacity}"><title>${hourLabel}: aerosol optical depth ${v.toFixed(2)} (${v < 0.15 ? 'clear' : v < 0.5 ? 'some haze' : 'hazy'})</title></rect>`;
+      }
+      svg += cell;
+    }
+    peaks[row.key] = peak;
+  });
+  svg += axis.dayLines + axis.hourLabels + axis.dayLabels;
+
+  const bits = [];
+  if (peaks.european_aqi !== null) bits.push(`peak AQI ${Math.round(peaks.european_aqi)} (${eaqiInfo(peaks.european_aqi).label})`);
+  if (peaks.uv_index !== null) bits.push(`peak UV ${peaks.uv_index.toFixed(1)} (${uvInfo(peaks.uv_index)})`);
+  if (peaks.aerosol_optical_depth !== null) bits.push(`max haze ${peaks.aerosol_optical_depth.toFixed(2)}`);
+  const caption = bits.length ? `<div class="chart-caption">${bits.join(' · ')} over the next ${n} hours · CAMS via Open-Meteo (single model — not part of the model comparison)</div>` : '';
+
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
+    ${svg}
+  </svg>${caption}`;
+}
+
+// Color legend, shown inside the section's (i) tooltip rather than below
+// the chart. AQI bands and UV reference points share the same six colors,
+// so each swatch carries both scales (see AQ_RAMP); the haze row samples
+// its opacity scale. Matches the SVG fill values exactly.
+function buildAirLegend() {
+  const sw = (color, label, opacity) =>
+    `<span class="aq-legend-item" title="${escapeHtml(label)}"><span class="aq-legend-sw" style="background:${color};${opacity ? `opacity:${opacity};` : ''}"></span>${escapeHtml(label)}</span>`;
+  const UV_POINTS = [0, 2, 5, 7, 9, 11];
+  return `<div class="aq-legend">
+    <div class="aq-legend-row"><span class="aq-legend-lead">AQI / UV</span>${EAQI_BANDS.map(([limit, color, label], i) =>
+      sw(color, `${label === 'extremely poor' ? '100+' : '<' + limit} / ${UV_POINTS[i] === 11 ? '11+' : UV_POINTS[i]}`)).join('')}</div>
+    <div class="aq-legend-row"><span class="aq-legend-lead">Haze</span>${[0, 0.25, 0.5, 0.75, 1].map(v =>
+      sw(v < 0.15 ? 'var(--grid-line)' : '#8ea0b8', v.toFixed(2), v < 0.15 ? '0.35' : aodOpacity(v).toFixed(2))).join('')}</div>
+  </div>`;
 }
 
 // load a remembered place if one was saved, otherwise default to Vienna, Austria
