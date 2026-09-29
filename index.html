@@ -60,7 +60,6 @@
     --risk-storm: #e35b5b;
     --risk-rain: #4f8fdb;
     --risk-snow: #7fd9e6;
-    --risk-wind: #b489dd;
     --risk-none: #223140;
   }
   *{box-sizing:border-box;}
@@ -135,19 +134,23 @@
   /* hero spread */
   .hero{
     margin-top:26px;
-    background:var(--bg-panel);
+    /* A whisper of the IFS blue bleeding in from the top-left corner, so
+       the panel reads as a surface, not a flat slab — without competing
+       with the charts inside it. */
+    background:linear-gradient(135deg, rgba(79,143,219,.07), transparent 42%), var(--bg-panel);
     border:1px solid var(--grid-line);
-    border-radius:4px;
-    padding:20px 22px 22px;
+    border-radius:6px;
+    padding:22px 24px 24px;
   }
-  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
-  .hero-label{
-    font-family:'Space Grotesk',sans-serif;font-weight:600;
-    font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-dim);
+  .hero-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:18px;}
+  .hero-place{
+    font-family:'Space Grotesk',sans-serif;font-weight:700;
+    font-size:clamp(20px,3vw,26px);letter-spacing:-0.01em;line-height:1.15;color:var(--ink);
   }
+  .hero-place-country{color:var(--ink-dim);font-weight:500;font-size:.7em;}
   .day-switch{
     display:inline-flex;background:#1a232d;border:1px solid var(--grid-line);
-    border-radius:20px;padding:3px;gap:2px;margin-top:10px;
+    border-radius:20px;padding:3px;gap:2px;margin-top:12px;
   }
   .day-switch-btn{
     font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;
@@ -156,13 +159,23 @@
   }
   .day-switch-btn:hover:not(.active){color:var(--ink);}
   .day-switch-btn.active{background:var(--c-ecmwf);color:#0a121a;}
-  .hero-right{text-align:right;}
-  .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:32px;line-height:1;color:var(--ink);}
-  .hero-now-range{font-size:11px;color:var(--ink-dim);margin-top:2px;}
-.hero-now-hl{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;}
-.hero-now-hl .hl-tag{color:var(--ink-dim);font-weight:500;font-size:11px;}
-.hero-now-main{display:flex;align-items:baseline;gap:7px;}
-  .hero-astro{font-size:11px;color:var(--ink-dim);margin-top:6px;white-space:nowrap;}
+  .hero-right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;}
+  .hero-now-main{display:flex;align-items:center;gap:12px;}
+  .hero-now-icon{font-size:30px;line-height:1;}
+  .hero-now-val{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(40px,6vw,54px);line-height:1;color:var(--ink);letter-spacing:-0.02em;}
+  .hero-now-hl{display:flex;flex-direction:column;gap:3px;text-align:left;font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;}
+  .hero-now-hl .hl-tag{color:var(--ink-faint);font-weight:500;font-size:10px;}
+  .hero-now-range{font-size:11px;color:var(--ink-dim);margin-top:5px;}
+  /* One wrapping row of context under the big temperature: today's
+     sun/moon first, then the whole-view forecast numbers (wind, sun,
+     air), then a faint tag scoping them to the active 24h/72h window. */
+  .hero-meta{
+    display:flex;flex-wrap:wrap;justify-content:flex-end;
+    gap:3px 16px;margin-top:10px;
+    font-size:12px;color:var(--ink-dim);
+  }
+  .hero-meta-item{white-space:nowrap;}
+  .hero-meta-range{color:var(--ink-faint);}
   .chart-title{
     font-family:'Space Grotesk',sans-serif;
     font-weight:600;
@@ -206,8 +219,7 @@
   /* Desktop affordance for tap-to-filter: the temp line nearest the
      cursor (within the same 12px tolerance a tap uses) thickens via a
      class toggle from mousemove — no state, no re-render. */
-  #tempChartHolder path.temp-line-hover{stroke-width:4.5;}
-  .chart-caption{font-size:10px;color:var(--ink-dim);margin-top:6px;}
+  .temp-chart-wrap path.temp-line-hover{stroke-width:4.5;}
   .aq-legend{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--grid-line);padding-top:8px;}
   .aq-legend-row{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;}
   .aq-legend-item{display:inline-flex;align-items:center;gap:4px;font-size:9px;color:var(--ink-dim);font-family:'IBM Plex Mono',monospace;}
@@ -284,8 +296,8 @@
     .wrap{padding:16px 12px 40px;}
     .hero{padding:16px 14px 18px;}
     .hero-top{flex-direction:column;align-items:flex-start;gap:12px;}
-    .hero-right{text-align:left;width:100%;}
-    .hero-astro{white-space:normal;}
+    .hero-right{text-align:left;width:100%;align-items:flex-start;}
+    .hero-meta{justify-content:flex-start;}
   }
 </style>
 </head>
@@ -524,7 +536,7 @@ rememberCheckbox.addEventListener('change', () => {
 
 // --- tap-to-filter geometry (temperature chart) ------------------------
 // The helpers between the [tap-geometry] markers are pure — no DOM — so
-// they can be lifted out and exercised by a standalone test; nearestTempLine
+// they can be lifted out and exercised by a standalone test; nearestModelLine
 // below is the thin DOM glue that feeds them real click coordinates.
 // [tap-geometry begin]
 const TEMP_TAP_TOLERANCE_PX = 12;
@@ -573,11 +585,12 @@ function pickNearestPolyline(x, y, candidates) {
 }
 // [tap-geometry end]
 
-// Map a client-space click into the temp chart's viewBox coordinates and
-// pick the nearest model line. Distance comes back in chart units, so the
-// caller converts to screen px before comparing against the tolerance —
-// 12px should mean the same thing on a phone as on a desktop monitor.
-function nearestTempLine(svg, clientX, clientY) {
+// Map a client-space click into the temperature chart's viewBox
+// coordinates and pick the nearest model line. Distance comes back
+// in chart units, so the caller converts to screen px before comparing
+// against the tolerance — 12px should mean the same thing on a phone as
+// on a desktop monitor.
+function nearestModelLine(svg, clientX, clientY) {
   const rect = svg.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
   const vb = svg.viewBox.baseVal;
@@ -587,7 +600,7 @@ function nearestTempLine(svg, clientX, clientY) {
   const y = (clientY - rect.top) * (vb.height / rect.height);
   const candidates = [];
   const byModel = {};
-  svg.querySelectorAll('path[data-role="temp-line"]').forEach(p => {
+  svg.querySelectorAll('path[data-role="model-line"]').forEach(p => {
     const pts = parsePathPairs(p.getAttribute('d') || '');
     if (pts.length) {
       candidates.push({ model: p.dataset.model, pts });
@@ -639,7 +652,8 @@ app.addEventListener('click', (e) => {
     return; // must not fall through — the branches below would re-toggle it
   }
 
-  // Temperature chart: the six lines cross and overlap constantly, so
+  // Temperature and wind charts: lines and area strokes cross and overlap
+  // constantly, so
   // native hit-testing would hand every click to whichever line was
   // painted last, leaving the lines underneath untappable wherever they
   // cross — and fat hit-strokes (pointer-events:stroke + stroke-width)
@@ -647,9 +661,9 @@ app.addEventListener('click', (e) => {
   // resolve the click to viewBox coordinates and pick the geometrically
   // nearest line within a small screen-space tolerance, so every line
   // stays equally tappable no matter where it crosses another.
-  const tempSvg = e.target.closest('#tempChartHolder svg');
-  if (tempSvg) {
-    const hit = nearestTempLine(tempSvg, e.clientX, e.clientY);
+  const lineSvg = e.target.closest('#tempChartHolder svg, #windChartHolder svg');
+  if (lineSvg) {
+    const hit = nearestModelLine(lineSvg, e.clientX, e.clientY);
     if (hit && hit.screenDist < TEMP_TAP_TOLERANCE_PX) {
       const id = hit.model;
       toggleModelSelection(id);
@@ -695,7 +709,7 @@ app.addEventListener('mousemove', (e) => {
     holder.querySelectorAll('path.temp-line-hover').forEach(p => p.classList.remove('temp-line-hover'));
     return;
   }
-  const hit = nearestTempLine(svg, e.clientX, e.clientY);
+  const hit = nearestModelLine(svg, e.clientX, e.clientY);
   const hot = hit && hit.screenDist < TEMP_TAP_TOLERANCE_PX ? hit.path : null;
   holder.querySelectorAll('path.temp-line-hover').forEach(p => { if (p !== hot) p.classList.remove('temp-line-hover'); });
   if (hot && !hot.classList.contains('temp-line-hover')) hot.classList.add('temp-line-hover');
@@ -778,7 +792,7 @@ function sectionHead(title, info, extraHtml) {
 async function fetchModel(place, model) {
   // forecast_days=4 guarantees a full 72h window is available no matter what
   // hour "now" falls on within day 0 (worst case: now = day 0, hour 23).
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,sunshine_duration&models=${model.id}&forecast_days=4&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,sunshine_duration&models=${model.id}&forecast_days=4&timezone=auto`;
   const res = await fetch(url);
   const body = await res.json().catch(() => null);
   if (!res.ok || !body || body.error) {
@@ -891,17 +905,37 @@ function moonPhaseInfo(fraction) {
   return { name: 'Waning Crescent', emoji: '🌘' };
 }
 
+// WMO weather-code → emoji for the hero's "now" glyph. Only the coarse
+// condition matters here; the fine-grained codes still drive the hazard
+// chips below.
+function weatherEmoji(code) {
+  if (code === 0) return '☀';
+  if (code === 1) return '🌤';
+  if (code === 2) return '⛅';
+  if (code === 3) return '☁';
+  if (code === 45 || code === 48) return '🌫';
+  if (code >= 95) return '⛈';
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return '🌨';
+  if (code === 66 || code === 67) return '🌨';
+  if (code >= 61 && code <= 65) return '🌧';
+  if (code >= 51 && code <= 57) return '🌦';
+  if (code >= 80 && code <= 82) return '🌦';
+  return '🌡';
+}
+
 // Always today's sunrise/sunset/moon — it's context for "right now", not a
 // per-view forecast, so it doesn't change between the 24h and 72h views.
-function buildAstroLine(astro) {
-  if (!astro || !astro.sunrise || !astro.sunrise[0]) return '';
-  const sunrise = astro.sunrise[0].split('T')[1];
-  const sunset = astro.sunset ? astro.sunset[0].split('T')[1] : null;
-  const moon = astro.moon_phase ? moonPhaseInfo(astro.moon_phase[0]) : null;
-  const parts = [`🌅 ${sunrise}`];
-  if (sunset) parts.push(`🌇 ${sunset}`);
-  if (moon) parts.push(`${moon.emoji} ${moon.name}`);
-  return `<div class="hero-astro">${parts.join(' · ')}</div>`;
+// Returned as discrete items so the hero's meta row can interleave them
+// with the forecast stats on one wrapping line.
+function astroParts(astro) {
+  if (!astro || !astro.sunrise || !astro.sunrise[0]) return [];
+  const parts = [`🌅 ${astro.sunrise[0].split('T')[1]}`];
+  if (astro.sunset && astro.sunset[0]) parts.push(`🌇 ${astro.sunset[0].split('T')[1]}`);
+  if (astro.moon_phase) {
+    const moon = moonPhaseInfo(astro.moon_phase[0]);
+    if (moon) parts.push(`${moon.emoji} ${moon.name}`);
+  }
+  return parts;
 }
 
 function render(place, entries, astro, air) {
@@ -944,6 +978,11 @@ function render(place, entries, astro, air) {
     const c = (codes || t.map(() => 0)).slice(nowIdx, nowIdx + span);
     const w = (winds || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
     const g = (gusts || t.map(() => 0)).slice(nowIdx, nowIdx + span).map(v => v || 0);
+    // Wind direction in FROM-notation degrees (0 = from the north). Unlike
+    // the other series it stays null where a model doesn't report — a 0°
+    // would be a real direction (north), not a missing value — and nulls
+    // drop out of the direction band's circular mean instead of bending it.
+    const dirs = (extractSeries(hourly, m.id, 'wind_direction_10m') || t.map(() => null)).slice(nowIdx, nowIdx + span);
     const timesSpan = times.slice(nowIdx, nowIdx + span);
     const validT = t.filter(v => v !== null && v !== undefined);
 
@@ -972,7 +1011,7 @@ function render(place, entries, astro, air) {
     return {
       ...m,
       available: validT.length > 0,
-      temps: t, precs: p, precipProb: pp, sun: suns, codes: c, winds: w, gusts: g, times: timesSpan, hourFlags,
+      temps: t, precs: p, precipProb: pp, sun: suns, codes: c, winds: w, gusts: g, wdir: dirs, times: timesSpan, hourFlags,
       nowVal: t[0],
       todayLow, todayHigh,
       totalPrecip: p.reduce((a, b) => a + b, 0),
@@ -985,7 +1024,7 @@ function render(place, entries, astro, air) {
 
   const header = `<div class="hero"><div class="hero-top">
       <div>
-        <div class="hero-label">${escapeHtml(place.name)}${place.country ? ', ' + escapeHtml(place.country) : ''}</div>
+        <div class="hero-place">${escapeHtml(place.name)}${place.country ? `<span class="hero-place-country">, ${escapeHtml(place.country)}</span>` : ''}</div>
         <div class="day-switch">
           <button type="button" class="day-switch-btn${activeRange === 24 ? ' active' : ''}" data-hours="24">24h</button>
           <button type="button" class="day-switch-btn${activeRange === 72 ? ' active' : ''}" data-hours="72">72h</button>
@@ -993,14 +1032,14 @@ function render(place, entries, astro, air) {
       </div>
       <div class="hero-right">
         <div class="hero-now" id="heroNow"></div>
-        ${buildAstroLine(astro)}
+        <div class="hero-meta" id="heroMeta"></div>
       </div>
     </div>
     <div id="heroBody"></div>
   </div>`;
 
   app.innerHTML = header;
-  renderHero(perModel, air);
+  renderHero(perModel, air, astro);
   window.scrollTo(0, scrollY);
 }
 
@@ -1013,12 +1052,14 @@ const HAZARDS = [
   { key: 'strongWind',   label: 'Strong gusts (60+ km/h)', flagKey: 'strongWind' },
 ];
 
-function renderHero(perModel, air) {
+function renderHero(perModel, air, astro) {
   const box = $('#heroBody');
   const nowBox = $('#heroNow');
+  const metaBox = $('#heroMeta');
   const avail = perModel.filter(m => m.available);
   if (!avail.length) {
     nowBox.innerHTML = '';
+    metaBox.innerHTML = '';
     box.innerHTML = '<div class="no-data">No data available from any model for this location.</div>';
     lastAvailModels = null;
     return;
@@ -1028,16 +1069,24 @@ function renderHero(perModel, air) {
   if (nowTemps.length) {
     const nowAvg = nowTemps.reduce((a, b) => a + b, 0) / nowTemps.length;
     const nowMin = Math.min(...nowTemps), nowMax = Math.max(...nowTemps);
-    const rangeLabel = nowMax - nowMin >= 1
-      ? `${Math.round(nowMin)}–${Math.round(nowMax)}°`
-      : '';
+    // "The" current condition is the modal weather code across models at
+    // the first hour — majority wins, so a single drizzly outlier can't
+    // hijack the glyph when five models say overcast.
+    const codeCounts = new Map();
+    avail.forEach(m => {
+      const c = m.codes[0];
+      if (c !== null && c !== undefined) codeCounts.set(c, (codeCounts.get(c) || 0) + 1);
+    });
+    let nowCode = null, bestCount = 0;
+    codeCounts.forEach((count, code) => { if (count > bestCount) { bestCount = count; nowCode = code; } });
     // Today's low/high, averaged across models the same way nowAvg is.
     const lows = avail.map(m => m.todayLow).filter(v => v !== null && v !== undefined);
     const highs = avail.map(m => m.todayHigh).filter(v => v !== null && v !== undefined);
-    const hlLabel = (lows.length && highs.length)
-      ? `<span class="hl-tag">H</span> ${Math.round(highs.reduce((a, b) => a + b, 0) / highs.length)}° <span class="hl-tag">L</span> ${Math.round(lows.reduce((a, b) => a + b, 0) / lows.length)}°`
-      : '';
-    nowBox.innerHTML = `<div class="hero-now-main"><div class="hero-now-val">${Math.round(nowAvg)}°</div><div class="hero-now-hl">${hlLabel}</div></div><div class="hero-now-range">${rangeLabel}</div>`;
+    const hlBits = [];
+    if (highs.length) hlBits.push(`<span><span class="hl-tag">H</span> ${Math.round(highs.reduce((a, b) => a + b, 0) / highs.length)}°</span>`);
+    if (lows.length) hlBits.push(`<span><span class="hl-tag">L</span> ${Math.round(lows.reduce((a, b) => a + b, 0) / lows.length)}°</span>`);
+    const spreadTxt = nowMax - nowMin >= 1 ? `${Math.round(nowMin)}–${Math.round(nowMax)}°` : `${Math.round(nowAvg)}°`;
+    nowBox.innerHTML = `<div class="hero-now-main">${nowCode !== null ? `<div class="hero-now-icon">${weatherEmoji(nowCode)}</div>` : ''}<div class="hero-now-val">${Math.round(nowAvg)}°</div>${hlBits.length ? `<div class="hero-now-hl">${hlBits.join('')}</div>` : ''}</div><div class="hero-now-range">${spreadTxt} across ${nowTemps.length} model${nowTemps.length === 1 ? '' : 's'}</div>`;
   } else {
     nowBox.innerHTML = '';
   }
@@ -1046,6 +1095,60 @@ function renderHero(perModel, air) {
   // available here (see effectiveSelection). Every chart below takes this
   // resolved value, not selectedModels directly.
   const activeSel = effectiveSelection(avail);
+
+  // The hero's meta row, one wrapping line under the big temperature:
+  // today's sun/moon context first, then the whole-view forecast numbers
+  // the chart captions used to carry below the charts (average wind and
+  // peak gust, expected sunshine, air-quality peaks), then a faint tag
+  // scoping the forecast items to the active 24h/72h window. Wind and
+  // sunshine average over the filtered set (matching the hazard chips,
+  // so they track the model filter); the air peaks come from CAMS, which
+  // is a single model and ignores the filter.
+  const metaItems = [];
+  astroParts(astro).forEach(p => metaItems.push({ html: p }));
+  const statsBase = activeSel ? avail.filter(m => activeSel.has(m.id)) : avail;
+  const statHours = avail[0].times.length;
+  if (statsBase.length) {
+    const avgWind = statsBase.reduce((a, m) => a + (m.avgWind || 0), 0) / statsBase.length;
+    const gustPeak = statsBase.reduce((best, m) => (m.maxGust > best.maxGust ? m : best), statsBase[0]);
+    metaItems.push({ html: `🌬 ${Math.round(avgWind)} km/h · gusts ${Math.round(gustPeak.maxGust)} (${gustPeak.name})` });
+    // Expected sunshine: per hour, the mean of the models that reported,
+    // summed over the view — the same average buildSunChart paints.
+    let totalSunSecs = 0, sunHoursCount = 0;
+    for (let i = 0; i < statHours; i++) {
+      const reporting = statsBase.map(m => m.sun ? m.sun[i] : null).filter(v => v !== null && v !== undefined);
+      if (!reporting.length) continue;
+      totalSunSecs += reporting.reduce((a, b) => a + b, 0) / reporting.length;
+      sunHoursCount++;
+    }
+    if (sunHoursCount) metaItems.push({ html: `☀ ${(totalSunSecs / 3600).toFixed(1)} h sun` });
+  }
+  if (air && air.hourly && air.hourly.time) {
+    // Peak each CAMS variable over the view's hours, matching the way
+    // buildAirChart aligns the air API's timestamps to the chart's.
+    const airIdx = new Map(air.hourly.time.map((t, i) => [t, i]));
+    const peakOf = key => {
+      let peak = null;
+      for (const t of avail[0].times) {
+        const i = airIdx.get(t);
+        const arr = air.hourly[key];
+        if (i === undefined || !arr) continue;
+        const v = arr[i];
+        if (v !== null && v !== undefined && (peak === null || v > peak)) peak = v;
+      }
+      return peak;
+    };
+    const aqiPeak = peakOf('european_aqi');
+    const uvPeak = peakOf('uv_index');
+    const aodPeak = peakOf('aerosol_optical_depth');
+    const airBits = [];
+    if (aqiPeak !== null) airBits.push(`AQI ${Math.round(aqiPeak)} (${eaqiInfo(aqiPeak).label})`);
+    if (uvPeak !== null) airBits.push(`UV ${uvPeak.toFixed(1)} (${uvInfo(uvPeak)})`);
+    if (aodPeak !== null) airBits.push(`haze ${aodPeak.toFixed(2)}`);
+    if (airBits.length) metaItems.push({ html: airBits.join(' · '), title: 'Air-quality peaks over the same hours · CAMS via Open-Meteo (single model — not part of the model comparison)' });
+  }
+  metaItems.push({ html: `next ${statHours}h`, range: true });
+  metaBox.innerHTML = metaItems.map(i => `<span class="hero-meta-item${i.range ? ' hero-meta-range' : ''}"${i.title ? ` title="${i.title}"` : ''}>${i.html}</span>`).join('');
 
   // Hazard chips recompute their counts/denominator against the filtered
   // set — a hazard only one of your selected models flags would otherwise
@@ -1144,6 +1247,8 @@ function renderHero(perModel, air) {
       <div class="sub-head">Hourly</div>
       <div id="precipChartHolder"></div>
     </div>
+    ${sectionHead('Wind', 'Hourly sustained wind speed (km/h) from each model over the selected time range, drawn as one translucent filled area per model in its own color. Where the areas spread apart, the models disagree on how windy it will get. The arrow band under the chart shows the wind direction for each hour — where the wind blows toward, fainter the more the models disagree on the direction; hover an arrow for each model\'s own direction, given as the wind comes FROM, as on a weather map, plus the average speed. Tap a line to filter to that model — tap again to remove it.')}
+    <div class="temp-chart-wrap"><div id="windChartHolder"></div></div>
     ${sectionHead('Sunshine', 'One square per hour, aligned with the charts above — the brighter the yellow, the more minutes of direct sunshine the models expect that hour (averaged across the models shown). Faint gray squares are hours with no sun expected at all; hover or tap a square for each model\'s own estimate.')}
     <div class="temp-chart-wrap"><div id="sunChartHolder"></div></div>
     ${air ? sectionHead('Air quality', 'Three strips aligned to the same hours — European AQI, UV index (WHO scale), and atmospheric haze/aerosol optical depth (the darker the square, the hazier). AQI and UV share one severity color ramp, blue (mild) through orange and red to purple (extreme); the legend maps it to both scales. Single CAMS model, so unlike the weather charts it is not affected by the model filter.', buildAirLegend()) : ''}
@@ -1159,13 +1264,15 @@ function renderResponsiveCharts() {
   const tempHolder = $('#tempChartHolder');
   const precipHolder = $('#precipChartHolder');
   const sunHolder = $('#sunChartHolder');
+  const windHolder = $('#windChartHolder');
   const airHolder = $('#airChartHolder');
-  if (!avail || !tempHolder || !precipHolder || !sunHolder) return;
+  if (!avail || !tempHolder || !precipHolder || !sunHolder || !windHolder) return;
   const width = Math.max(260, Math.round(tempHolder.getBoundingClientRect().width));
   const selected = effectiveSelection(avail);
   tempHolder.innerHTML = buildLineChart(avail, 'temps', { unit: '°', width, selected });
   precipHolder.innerHTML = buildPrecipChart(avail, width, selected);
   sunHolder.innerHTML = buildSunChart(avail, width, selected);
+  windHolder.innerHTML = buildWindChart(avail, width, selected);
   if (airHolder && lastAir) {
     airHolder.innerHTML = buildAirChart(lastAir.hourly, avail[0].times, width);
   }
@@ -1219,7 +1326,7 @@ function buildLineChart(avail, seriesKey, opts) {
     const isSel = !selected || selected.has(m.id);
     const opacity = selected ? (isSel ? 1 : 0.25) : 0.9;
     const strokeWidth = selected ? (isSel ? 2.5 : 1.5) : 2;
-    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="${strokeWidth}" opacity="${opacity}" data-model="${m.id}" data-role="temp-line"/>`;
+    return `<path d="${path}" fill="none" stroke="${m.color}" stroke-width="${strokeWidth}" opacity="${opacity}" data-model="${m.id}" data-role="model-line"/>`;
   }).join('');
 
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
@@ -1436,15 +1543,12 @@ function buildSunChart(avail, width, selected) {
   const axis = buildXAxis(times, n, plotW, rowH, PAD_L, PAD_T);
 
   const cells = [];
-  let totalSecs = 0, cellsWithData = 0;
   for (let i = 0; i < n; i++) {
     const reporting = base
       .map(m => ({ name: m.name, v: m.sun ? m.sun[i] : null }))
       .filter(d => d.v !== null && d.v !== undefined);
     if (!reporting.length) continue; // no model reported this hour → gap
     const meanSecs = reporting.reduce((a, d) => a + d.v, 0) / reporting.length;
-    totalSecs += meanSecs;
-    cellsWithData++;
     const frac = Math.max(0, Math.min(1, meanSecs / 3600));
     const mins = Math.round(meanSecs / 60);
     const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
@@ -1460,17 +1564,191 @@ function buildSunChart(avail, width, selected) {
     }
   }
 
-  const caption = cellsWithData
-    ? `<div class="chart-caption">≈ ${(totalSecs / 3600).toFixed(1)} h of sunshine over the next ${n} hours · ${base.length === 1 ? base[0].name : `average of ${base.length} models`}</div>`
-    : '';
-
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
     ${axis.vLines}
     ${cells.join('')}
     ${axis.dayLines}
     ${axis.hourLabels}
     ${axis.dayLabels}
-  </svg>${caption}`;
+  </svg>`;
+}
+
+// ── Wind ──────────────────────────────────────────────────────────
+// An area chart on the same hour columns as every other chart, with
+// the same plot geometry as the temperature chart (same 220 px plot,
+// same pads), so the wind plot area is exactly as tall as the
+// temperature and precipitation ones. Each model's hourly sustained
+// wind speed is a translucent filled area in the model's color with
+// its stroke drawn as a line on top — the divergence story the
+// temperature lines tell, read as gaps between colored bands instead
+// of crossing lines. Gusts live in the hero stats and the hazard
+// chips; they systematically run higher than the sustained speeds
+// plotted here.
+
+// Fill opacities for the three selection states. Unfiltered is low
+// because all six areas stack near the baseline (calm hours overlap
+// everyone's fill); a filter active raises the chosen models' fill and
+// washes the rest out to almost nothing.
+const WIND_FILL_OPACITY = 0.10;
+const WIND_FILL_SELECTED_OPACITY = 0.22;
+const WIND_FILL_DIMMED_OPACITY = 0.04;
+
+// Height of the direction band between the plot's baseline and the
+// hour labels — the same reserved-strip pattern as the precipitation
+// chart's confidence dots (CONFIDENCE_DOT_ROW), so the band adds
+// annotation space below the plot without shrinking the plot area the
+// height parity with the temperature chart is about.
+const DIR_ROW = 18;
+
+// Circular mean of directions in degrees (0–360). A plain arithmetic mean
+// is wrong twice over for angles: 350° and 10° average to 180° — the exact
+// opposite of the true answer, north — and the wrap at 360/0 breaks the
+// averaging outright. Summing unit vectors and taking atan2 of the
+// resultant has neither problem.
+function circMeanDeg(vals) {
+  let s = 0, c = 0;
+  for (const v of vals) {
+    const r = v * Math.PI / 180;
+    s += Math.sin(r); c += Math.cos(r);
+  }
+  return (Math.atan2(s, c) * 180 / Math.PI + 360) % 360;
+}
+
+// Shortest angular distance between two directions, 0–180. The mean of
+// these across models is the direction spread the arrows' fade encodes.
+function angDistDeg(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+const COMPASS16 = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+const degToCompass = deg => COMPASS16[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+
+// Hours whose (filtered-set) average sustained speed falls below this are
+// "calm" for the direction band's purposes — a direction is meaningless
+// at ~zero wind, so those hours draw a small neutral dot instead of an
+// arrow pointing wherever the models' noise happens to sum.
+const CALM_KMH = 2;
+
+function buildWindChart(avail, width, selected) {
+  const n = avail[0].times.length;
+  const isMultiDay = n > 24;
+  const W = width || 1000;
+  const H = 220 + DIR_ROW + (isMultiDay ? 14 : 0);
+  const PAD_L = CHART_PAD_L, PAD_R = CHART_PAD_R, PAD_T = 16, PAD_B = (isMultiDay ? 40 : 26) + DIR_ROW;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  // Scale from every model's values, not just the filtered set, so the
+  // y-axis doesn't jump when a filter is toggled — same choice as the
+  // temperature chart. Floored at 30 km/h so a near-calm day doesn't
+  // paint every area nearly solid.
+  let top = 0;
+  avail.forEach(m => m.winds.forEach(v => { if (v !== null && v !== undefined && v > top) top = v; }));
+  const vMax = Math.max(30, Math.ceil(top));
+
+  const xFor = chartXFor(PAD_L, plotW, n);
+  const yFor = v => PAD_T + plotH - (Math.max(0, v) / vMax) * plotH;
+  const plotBottom = PAD_T + plotH;
+
+  const times = avail[0].times;
+  const axis = buildXAxis(times, n, plotW, plotH, PAD_L, PAD_T, DIR_ROW);
+
+  const steps = 4;
+  const gridLines = [];
+  for (let s = 0; s <= steps; s++) {
+    const val = vMax * s / steps;
+    const y = yFor(val);
+    gridLines.push(`<line x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W - PAD_R}" y2="${y.toFixed(1)}" stroke="var(--grid-line)" stroke-width="1"/>
+      <text x="${W - PAD_R + 8}" y="${(y + 3).toFixed(1)}" font-size="10" fill="var(--ink)" font-family="IBM Plex Mono">${Math.round(val)}</text>`);
+  }
+
+  // Same paint-order trick as the temperature lines: dimmed models
+  // first, selected ones last, so the chosen models sit on top. Fills
+  // and strokes are separate passes so no fill ever covers a line — SVG
+  // has no z-index, only paint order. The fills ignore pointer events
+  // entirely: the tap-to-filter handler picks the nearest
+  // data-role="model-line" stroke geometrically, exactly as it does for
+  // the temperature chart.
+  const order = selected ? [...avail].sort((a, b) => (selected.has(a.id) ? 1 : 0) - (selected.has(b.id) ? 1 : 0)) : avail;
+  const fills = [];
+  const strokes = [];
+  order.forEach(m => {
+    const isSel = !selected || selected.has(m.id);
+    const fillOpacity = selected ? (isSel ? WIND_FILL_SELECTED_OPACITY : WIND_FILL_DIMMED_OPACITY) : WIND_FILL_OPACITY;
+    const strokeWidth = selected ? (isSel ? 2.5 : 1.5) : 2;
+    const strokeOpacity = selected ? (isSel ? 1 : 0.25) : 0.9;
+    // Contiguous runs of reported hours: each run gets its own closed
+    // area (down to the baseline and back) and its own line, mirroring
+    // how buildLineChart leaves genuine gaps where a model reports
+    // nothing.
+    let run = [];
+    const flush = () => {
+      if (run.length < 2) { run = []; return; }
+      const line = run.map((pt, k) => `${k === 0 ? 'M' : 'L'}${xFor(pt.i).toFixed(1)},${yFor(pt.v).toFixed(1)}`).join('');
+      const x0 = xFor(run[0].i), x1 = xFor(run[run.length - 1].i);
+      const area = `M${x0.toFixed(1)},${plotBottom.toFixed(1)}` +
+        run.map(pt => ` L${xFor(pt.i).toFixed(1)},${yFor(pt.v).toFixed(1)}`).join('') +
+        ` L${x1.toFixed(1)},${plotBottom.toFixed(1)} Z`;
+      const title = `${m.name}: avg ${Math.round(m.avgWind)} km/h sustained · peak gust ${Math.round(m.maxGust)} km/h`;
+      fills.push(`<path d="${area}" fill="${m.color}" fill-opacity="${fillOpacity}" stroke="none" pointer-events="none"/>`);
+      strokes.push(`<path d="${line}" fill="none" stroke="${m.color}" stroke-width="${strokeWidth}" opacity="${strokeOpacity}" data-model="${m.id}" data-role="model-line"><title>${title}</title></path>`);
+      run = [];
+    };
+    m.winds.forEach((v, i) => {
+      if (v === null || v === undefined) { flush(); return; }
+      run.push({ i, v });
+    });
+    flush();
+  });
+
+  // Direction band: one arrow per hour in the reserved strip between
+  // the plot's baseline and the hour labels. The arrow points where the
+  // wind blows toward; the tooltip gives the FROM notation a weather
+  // map uses. Opacity is agreement: solid means the models agree on
+  // direction, faint means they scatter (same fade-by-agreement idea as
+  // the confidence dots). Everything averages the filtered set — speed
+  // and direction are averages, not counts — and hours no model
+  // reported on are left as genuine gaps.
+  const base = selected ? avail.filter(m => selected.has(m.id)) : avail;
+  const colW = plotW / n;
+  const s = Math.max(2.5, Math.min(6, colW / 2 - 0.5, DIR_ROW / 2 - 2.5));
+  const cy = plotBottom + DIR_ROW / 2;
+  const dirArrows = [];
+  for (let i = 0; i < n; i++) {
+    const speeds = base.map(m => m.winds[i]).filter(v => v !== null && v !== undefined);
+    if (!speeds.length) continue; // no model reported this hour → gap
+    const avg = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+    const x = xFor(i);
+    const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
+    if (avg < CALM_KMH) {
+      const title = `${hourLabel}: calm (under ${CALM_KMH} km/h)`;
+      dirArrows.push(`<circle cx="${x.toFixed(1)}" cy="${cy.toFixed(1)}" r="${Math.max(1, s * 0.4).toFixed(1)}" fill="var(--ink)" opacity="0.55"><title>${title}</title></circle>`);
+      continue;
+    }
+    const reporting = base
+      .map(m => ({ name: m.name, dir: m.wdir ? m.wdir[i] : null }))
+      .filter(d => d.dir !== null && d.dir !== undefined);
+    if (!reporting.length) continue; // speeds but no direction from anyone
+    const mean = circMeanDeg(reporting.map(d => d.dir));
+    const spread = reporting.reduce((a, d) => a + angDistDeg(d.dir, mean), 0) / reporting.length;
+    const opacity = (0.45 + 0.55 * Math.max(0, 1 - spread / 90)).toFixed(2);
+    const toward = (mean + 180) % 360;
+    const breakdown = reporting.map(d => `${d.name} ${degToCompass(d.dir)}`).join(' · ');
+    const title = `${hourLabel}: ${Math.round(avg)} km/h from ${degToCompass(mean)} (${Math.round(mean)}°), spread ${Math.round(spread)}° across ${reporting.length} model${reporting.length === 1 ? '' : 's'} — ${breakdown}`;
+    dirArrows.push(`<path d="M0,${(-s).toFixed(1)} L${(s * 0.62).toFixed(1)},${(s * 0.78).toFixed(1)} L0,${(s * 0.34).toFixed(1)} L${(-s * 0.62).toFixed(1)},${(s * 0.78).toFixed(1)} Z" fill="var(--ink)" opacity="${opacity}" transform="translate(${x.toFixed(1)},${cy.toFixed(1)}) rotate(${toward.toFixed(1)})"><title>${title}</title></path>`);
+  }
+
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
+    ${axis.vLines}
+    ${gridLines.join('')}
+    ${fills.join('')}
+    ${strokes.join('')}
+    ${dirArrows.join('')}
+    ${axis.dayLines}
+    ${axis.hourLabels}
+    ${axis.dayLabels}
+  </svg>`;
 }
 
 // ── Air quality ────────────────────────────────────────────────────────
@@ -1568,16 +1846,13 @@ function buildAirChart(airHourly, times, width) {
   const H = PAD_T + rowsH + PAD_B;
   const axis = buildXAxis(times, n, plotW, rowsH, PAD_L, PAD_T);
 
-  const peaks = {};
   let svg = axis.vLines;
   rows.forEach((row, r) => {
     const rowTop = PAD_T + r * bandH + LABEL_H;
     svg += `<text x="${PAD_L}" y="${rowTop - 3}" font-size="9" fill="var(--ink-dim)" font-family="IBM Plex Mono">${row.label}</text>`;
-    let peak = null;
     for (let i = 0; i < n; i++) {
       const v = row.series[i];
       if (v === null) continue; // hour the air API doesn't cover → gap
-      if (peak === null || v > peak) peak = v;
       const hourLabel = times[i] ? hourTooltipLabel(times[i], n) : '';
       const x = (xFor(i) - cellW / 2).toFixed(1);
       const attrs = `x="${x}" y="${rowTop}" width="${cellW.toFixed(1)}" height="${AIR_CELL_ROW}" rx="2"`;
@@ -1596,19 +1871,12 @@ function buildAirChart(airHourly, times, width) {
       }
       svg += cell;
     }
-    peaks[row.key] = peak;
   });
   svg += axis.dayLines + axis.hourLabels + axis.dayLabels;
 
-  const bits = [];
-  if (peaks.european_aqi !== null) bits.push(`peak AQI ${Math.round(peaks.european_aqi)} (${eaqiInfo(peaks.european_aqi).label})`);
-  if (peaks.uv_index !== null) bits.push(`peak UV ${peaks.uv_index.toFixed(1)} (${uvInfo(peaks.uv_index)})`);
-  if (peaks.aerosol_optical_depth !== null) bits.push(`max haze ${peaks.aerosol_optical_depth.toFixed(2)}`);
-  const caption = bits.length ? `<div class="chart-caption">${bits.join(' · ')} over the next ${n} hours · CAMS via Open-Meteo (single model — not part of the model comparison)</div>` : '';
-
   return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block;touch-action:manipulation;">
     ${svg}
-  </svg>${caption}`;
+  </svg>`;
 }
 
 // Color legend, shown inside the section's (i) tooltip rather than below
