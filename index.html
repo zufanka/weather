@@ -255,12 +255,17 @@
   .strip-val{position:absolute;top:0;font-size:11px;font-weight:600;transform:translateX(-50%);white-space:nowrap;}
   .strip-axis{position:absolute;top:62px;font-size:10px;color:var(--ink);transform:translateX(-50%);}
 
-  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 22px;}
+  .models-toolbar{display:flex;align-items:center;gap:12px;margin:4px 0 20px;min-width:0;}
+  .models-toolbar .chart-title{flex:none;margin:0;font-size:14px;white-space:nowrap;}
+  .models-scroll{display:flex;align-items:center;gap:12px;min-width:0;padding:4px;overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--ink-faint) transparent;}
+  .models-scroll:focus-visible{outline:2px solid var(--c-ecmwf);outline-offset:3px;}
+  .legend{display:flex;flex-wrap:nowrap;flex:none;gap:3px;margin:0;}
+  .model-availability{flex:none;white-space:nowrap;font-size:10px;color:var(--ink-dim);}
   .legend-item{
     display:flex;align-items:center;gap:6px;margin:0;
     font-family:inherit;font-size:11px;color:var(--ink-dim);
     background:transparent;border:1px solid transparent;border-radius:20px;
-    padding:5px 11px 5px 9px;cursor:pointer;
+    padding:5px 7px;white-space:nowrap;cursor:pointer;
     transition:opacity .15s,border-color .15s,background .15s,color .15s;
   }
   .legend-item:hover:not(:disabled){border-color:var(--grid-line);color:var(--ink);}
@@ -901,8 +906,9 @@ async function loadPlace(place) {
     error: settled[i].status === 'rejected' ? settled[i].reason.message : null,
   })), astro, air);
 
-  const failedCount = settled.length - ok.length;
-  statusBox.textContent = failedCount ? `${failedCount} of ${MODELS.length} models unavailable for this location.` : '';
+  // Partial availability is shown inline with the model controls, not as
+  // a separate status row. Keep this live region for loading/fatal errors.
+  statusBox.textContent = '';
 }
 
 // Index of the current hour in the model's local time series — both the
@@ -1239,11 +1245,16 @@ function renderHero(perModel, air, astro) {
     </button>`;
   }).join('');
 
+  const unavailableCount = perModel.length - avail.length;
+  const availabilityLabel = `${unavailableCount} of ${perModel.length} models unavailable for this location.`;
   box.innerHTML = `
     <div class="hazard-row">${chips}</div>
-    ${sectionHead('Weather models', "Six national forecast models plotted together. Click a model's name to filter every chart down to just that one (or a few) — the rest stay visible, just grayed out for context.")}
-    <div class="legend">
-      ${legendItems}
+    <div class="models-toolbar">
+      ${sectionHead('Weather models', "Six national forecast models plotted together. Click a model's name to filter every chart down to just that one — the rest stay visible, just grayed out for context.")}
+      <div class="models-scroll" tabindex="0" role="group" aria-label="Weather model filters and availability; scroll horizontally for more">
+        <div class="legend">${legendItems}</div>
+        ${unavailableCount ? `<span class="model-availability" title="${availabilityLabel}" aria-label="${availabilityLabel}">${unavailableCount}/${perModel.length} unavailable</span>` : ''}
+      </div>
     </div>
     ${sectionHead('Temperature', 'The coloured curve is the hourly model average; thin grey lines show the individual forecasts. Wider separation means more disagreement. Tap a grey line or a model in the legend to focus on that model; the coloured curve then follows the selection. Tap again to show the all-model average.')}
     <div class="temp-chart-wrap" id="tempChartHolder"></div>
